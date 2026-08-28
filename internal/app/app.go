@@ -17,6 +17,7 @@ import (
 
 	"yodacon.org/gonex/assets"
 	"yodacon.org/gonex/internal/camera"
+	"yodacon.org/gonex/internal/gmath"
 	"yodacon.org/gonex/internal/config"
 	"yodacon.org/gonex/internal/console"
 	"yodacon.org/gonex/internal/galaxy"
@@ -36,7 +37,7 @@ const (
 	dt      = 1.0 / 60 // Ebitengine's fixed tick
 
 	AppName    = "Gonex"
-	AppVersion = "v0.1.0"
+	AppVersion = "v0.1.0-rc1"
 	ConfigPath = "config.xml"
 )
 
@@ -78,6 +79,14 @@ type App struct {
 	shotPath  string // GONEX_SHOT: dump a frame here and exit (dev)
 	shotFrame int
 	shotAt    int
+
+	recDir   string // GONEX_REC: dump every Nth frame here for gif assembly
+	recEvery int
+	recN     int
+
+	demoStellar int // GONEX_BOOT "demo <spob>": a scripted full landing
+	demoT       float64
+	demoHold    float64
 }
 
 func New() (*App, error) {
@@ -131,6 +140,19 @@ func New() (*App, error) {
 				}
 			} else if _, err := fmt.Sscanf(boot, "deorbit %d", &id); err == nil && id > 0 {
 				a.startDeorbit(id)
+			} else if _, err := fmt.Sscanf(boot, "demo %d", &id); err == nil && id > 0 {
+				// the scripted pilot: spawn on approach, then fly the whole
+				// handshake -> deorbit -> auto entry -> touchdown -> dock
+				a.demoStellar = id
+				for _, e := range a.World.Entities {
+					if pl, ok := e.(*world.Planet); ok && pl.StellarID == id {
+						if p := a.World.MainPlayer; p != nil {
+							p.P = pl.Pos().Add(gmath.V(120, -90))
+							p.V = gmath.Vec2{}
+							p.Heading = 340
+						}
+					}
+				}
 			} else if _, err := fmt.Sscanf(boot, "dock %d", &id); err == nil && id > 0 {
 				a.dock = &dockState{stellar: id}
 				a.mode = modeLanded
@@ -143,6 +165,13 @@ func New() (*App, error) {
 					a.tryJump()
 				}
 			}
+		}
+	}
+	a.recDir = os.Getenv("GONEX_REC")
+	a.recEvery = 15
+	if n := 0; os.Getenv("GONEX_REC_EVERY") != "" {
+		if _, err := fmt.Sscanf(os.Getenv("GONEX_REC_EVERY"), "%d", &n); err == nil && n > 0 {
+			a.recEvery = n
 		}
 	}
 	a.shotPath = os.Getenv("GONEX_SHOT")
@@ -261,6 +290,7 @@ func (a *App) Update() error {
 			if a.Console.State == console.Hidden {
 				a.handlePlayerInput()
 			}
+			a.updateDemo()
 			a.updateDocking()
 			a.World.Update(dt)
 			if a.World.ViewShip != nil {
@@ -306,19 +336,29 @@ func (a *App) Draw(screen *ebiten.Image) {
 	// dev frame dump: GONEX_SHOT=<path> writes frame 300 and exits.
 	if a.shotPath != "" {
 		if a.shotFrame++; a.shotFrame == a.shotAt {
-			pix := make([]byte, 4*ScreenW*ScreenH)
-			screen.ReadPixels(pix)
-			for i := 3; i < len(pix); i += 4 {
-				pix[i] = 255
-			}
-			img := &image.RGBA{Pix: pix, Stride: 4 * ScreenW,
-				Rect: image.Rect(0, 0, ScreenW, ScreenH)}
-			if f, err := os.Create(a.shotPath); err == nil {
-				png.Encode(f, img)
-				f.Close()
-			}
+			dumpFrame(screen, a.shotPath)
 			a.quitting = true
 		}
+	}
+	// dev recording: GONEX_REC=<dir> writes every Nth frame for gif assembly
+	if a.recDir != "" {
+		if a.recN++; a.recN%a.recEvery == 0 {
+			dumpFrame(screen, fmt.Sprintf("%s/f%06d.png", a.recDir, a.recN))
+		}
+	}
+}
+
+func dumpFrame(screen *ebiten.Image, path string) {
+	pix := make([]byte, 4*ScreenW*ScreenH)
+	screen.ReadPixels(pix)
+	for i := 3; i < len(pix); i += 4 {
+		pix[i] = 255
+	}
+	img := &image.RGBA{Pix: pix, Stride: 4 * ScreenW,
+		Rect: image.Rect(0, 0, ScreenW, ScreenH)}
+	if f, err := os.Create(path); err == nil {
+		png.Encode(f, img)
+		f.Close()
 	}
 }
 

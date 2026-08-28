@@ -189,3 +189,20 @@ func (a *App) drainNotices() {
 	}
 	a.voy.Notices = nil
 }
+
+
+// updateDemo is the scripted pilot behind GONEX_BOOT "demo <spob>": it
+// flies the real docking handshake, and the entry/dock code advances it
+// through touchdown to the spaceport, then quits.
+func (a *App) updateDemo() {
+	if a.demoStellar <= 0 || a.mode != modeFlight {
+		return
+	}
+	a.demoT += dt
+	switch {
+	case a.docking == nil && a.demoT > 0.9:
+		a.requestDocking(a.demoStellar)
+	case a.docking != nil && a.docking.wait <= 0 && a.docking.granted > 0:
+		a.requestDocking(a.demoStellar) // clearance in hand: commit
+	}
+}

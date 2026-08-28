@@ -106,6 +106,9 @@ func (a *App) startEntry(stellarID int) {
 			ahead: 1.5 + a.voy.Rng.Float64()*46,
 		})
 	}
+	if a.demoStellar > 0 {
+		e.auto = true // the scripted pilot trusts the computer
+	}
 	a.entry = e
 	a.mode = modeEntry
 	a.miniMapWin.Visible, a.hudWin.Visible, a.targetWin.Visible = false, false, false
@@ -164,8 +167,10 @@ func (a *App) updateEntry() {
 	}
 
 	// outcome card: give it a beat, then any key continues
+	// (the scripted pilot presses on after three seconds)
 	e.doneWait += dt
-	if e.doneWait > 1.2 && len(inpututil.AppendJustPressedKeys(nil)) > 0 {
+	if e.doneWait > 1.2 && (len(inpututil.AppendJustPressedKeys(nil)) > 0 ||
+		(a.demoStellar > 0 && e.doneWait > 3)) {
 		switch s.Status() {
 		case reentry.Landed:
 			a.dock = &dockState{stellar: e.stellar}

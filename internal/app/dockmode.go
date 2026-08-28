@@ -41,6 +41,13 @@ func (a *App) updateDock() {
 	d := a.dock
 	v := a.voy
 
+	// the scripted pilot admires the 1997 view for a beat, then wraps
+	if a.demoStellar > 0 {
+		if a.demoHold += dt; a.demoHold > 3.2 {
+			a.quitting = true
+		}
+	}
+
 	switch d.view {
 	case dockBar:
 		if !d.rolled {
