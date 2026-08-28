@@ -22,11 +22,19 @@ func premul(c color.RGBA, a float64) color.RGBA {
 	}
 }
 
-// The entry cockpit: the render view converted into a landing simulator.
-// The pilot flies the corridor needle like a glideslope; the plasma pillow
-// is drawn as three particle populations colored by the emission lines of
-// the species in the shield model, with the reflective "one-way mirror"
-// shell as a bright arc standing off the nose.
+// The entry cockpit, chase-camera edition. The camera rides behind and
+// above the ship, looking down the velocity vector:
+//
+//   - the planet limb is a curved arc that flattens as altitude falls,
+//     rises as γ steepens, and tilts when the envelope rolls;
+//   - the ground is a perspective dot-flow streaming toward the camera,
+//     with the landing pad resolving out of it on final;
+//   - the shock shell stands off *ahead* of the nose (up-screen), and the
+//     wake streams back past the camera, growing as it flies by;
+//   - the pilot flies the corridor needle like a glideslope.
+//
+// Particle colors are the emission lines of the species in the shield
+// model; the reflective "one-way mirror" shell is the bright arc.
 
 const entryTimeScale = 6.0 // a ~10-minute entry plays in ~100 s
 
@@ -45,19 +53,34 @@ var (
 	colRule   = color.RGBA{29, 58, 80, 255}
 )
 
+// scene geometry
+const (
+	shipX, shipY = 512.0, 470.0 // ship anchor on screen
+	horizonBase  = 296.0        // limb height at reference γ
+	gaugeTop     = 578.0        // instrument panel line
+)
+
 type plasmaParticle struct {
 	x, y, vx, vy float64
 	life, span   float64
-	kind         int // 0 Li streamer, 1 N2 sheath, 2 OI afterglow
+	scale        float64 // grows as the wake flies past the camera
+	kind         int     // 0 Li streamer, 1 N2 sheath, 2 OI afterglow
+}
+
+type groundDot struct {
+	lat, ahead float64 // km left/right of track, km ahead of the ship
 }
 
 type entryState struct {
-	sim      *reentry.Sim
-	stellar  int // where we are landing
-	feed     float64
-	auto     bool
-	parts    []plasmaParticle
-	doneWait float64 // seconds shown on the outcome card before returning
+	sim     *reentry.Sim
+	stellar int // where we are landing
+	feed    float64
+	auto    bool
+	bank    float64 // smoothed visual bank, radians
+	flash   float64 // white-in inherited from the deorbit plasma onset
+	parts   []plasmaParticle
+	ground  []groundDot
+	doneWait float64
 }
 
 // startEntry converts the view: flight → the landing simulator.
@@ -76,7 +99,14 @@ func (a *App) startEntry(stellarID int) {
 	veh.LiTank = a.voy.Lithium
 	sim := reentry.New(veh, prof, a.voy.Rng.Int63())
 	sim.Dmg = a.voy.Dmg // damage carries in from the life you've led
-	a.entry = &entryState{sim: sim, stellar: stellarID, feed: 0.1}
+	e := &entryState{sim: sim, stellar: stellarID, feed: 0.1}
+	for i := 0; i < 110; i++ {
+		e.ground = append(e.ground, groundDot{
+			lat:   (a.voy.Rng.Float64() - 0.5) * 56,
+			ahead: 1.5 + a.voy.Rng.Float64()*46,
+		})
+	}
+	a.entry = e
 	a.mode = modeEntry
 	a.miniMapWin.Visible, a.hudWin.Visible, a.targetWin.Visible = false, false, false
 	a.fullMapWin.Visible, a.galaxyWin.Visible = false, false
@@ -115,7 +145,17 @@ func (a *App) updateEntry() {
 		c.Auto = e.auto
 		s.Step(dt*entryTimeScale, c)
 		a.voy.Lithium = s.Li
+
+		// visual bank chases the roll command (autoland's roll shows too)
+		roll := c.Roll
+		if e.auto {
+			roll = math.Min(math.Max(s.Crossrange*0.12, -0.6), 0.6)
+		}
+		e.bank += (roll*0.48 - e.bank) * math.Min(3.5*dt, 1)
+		e.flash = math.Max(e.flash-1.4*dt, 0)
+
 		a.updatePlasma(c)
+		a.updateGround()
 
 		if s.Status() != reentry.Flying {
 			a.finishEntry()
@@ -165,33 +205,52 @@ func (a *App) finishEntry() {
 	a.drainNotices()
 }
 
-// updatePlasma runs the three emission populations. Spawn rates track the
-// physics: streamers follow the feed, the sheath follows heat flux, the
-// afterglow follows speed.
+// --- scene state ------------------------------------------------------
+
+// horizonY is where the limb sits: γ steeper → camera looks further down
+// → the horizon rides higher on screen. The chase camera levels off past
+// −9°: in the terminal sink (γ → −80°) it keeps the world in frame while
+// the instruments keep reading the true angle.
+func (e *entryState) horizonY() float64 {
+	gam := math.Max(e.sim.Gamma*180/math.Pi, -9)
+	return horizonBase + (gam+2.4)*22
+}
+
+// perspK is the ground-projection constant: it grows as the deck nears, so
+// the surface visibly swells up at the camera on final.
+func (e *entryState) perspK() float64 {
+	hkm := math.Max(e.sim.H/1000, 1.5)
+	return 640 * (1 + 9/hkm)
+}
+
+// updatePlasma runs the three emission populations in the chase frame:
+// spawn on the standoff shell ahead of the nose, stream back past the
+// camera, growing on the way by.
 func (a *App) updatePlasma(c reentry.Controls) {
 	e, s := a.entry, a.entry.sim
-	cx, cy := float64(ScreenW)/2, 300.0
-	stand := 40 + 26*(s.Pt.Standoff-1)
+	nose := shipY - 46
+	standPx := 16 + 22*(s.Pt.Standoff-1)
+	shellY := nose - standPx
 	qFrac := s.Pt.QShielded / s.Veh.TPSLimit
+	speed := 90 + 240*(s.V/8350)
 
-	spawn := func(kind int, n int) {
+	spawn := func(kind, n int) {
 		for i := 0; i < n; i++ {
-			ang := (a.voy.Rng.Float64() - 0.5) * 2.2 // fan under the nose
-			px := cx + math.Sin(ang)*stand
-			py := cy + math.Cos(ang)*stand*0.62
-			sp := 60 + a.voy.Rng.Float64()*90
+			ang := (a.voy.Rng.Float64() - 0.5) * 2.4 // fan across the shell
+			px := shipX + math.Sin(ang)*(38+standPx*0.8) - e.bank*30
+			py := shellY + (1-math.Cos(ang))*standPx*0.5
 			e.parts = append(e.parts, plasmaParticle{
 				x: px, y: py,
-				vx: math.Sin(ang)*sp*0.5 + (a.voy.Rng.Float64()-0.5)*20,
-				vy: -sp * (0.6 + 0.4*a.voy.Rng.Float64()),
-				span: 0.5 + a.voy.Rng.Float64()*float64(kind+1),
-				kind: kind,
+				vx:    math.Sin(ang)*speed*0.35 + (a.voy.Rng.Float64()-0.5)*24,
+				vy:    speed * (0.55 + 0.45*a.voy.Rng.Float64()),
+				span:  0.45 + a.voy.Rng.Float64()*(0.5+float64(kind)*0.5),
+				scale: 0.4,
+				kind:  kind,
 			})
 		}
 	}
-	feedN := int(c.Feed*6) + 1
-	spawn(0, feedN)
-	spawn(1, 1+int(qFrac*8))
+	spawn(0, 1+int(c.Feed*6))
+	spawn(1, 1+int(qFrac*9))
 	if s.V > 2000 {
 		spawn(2, 2)
 	}
@@ -199,10 +258,13 @@ func (a *App) updatePlasma(c reentry.Controls) {
 	live := e.parts[:0]
 	for _, p := range e.parts {
 		p.life += dt
-		p.x += p.vx * dt
-		p.y += p.vy * dt
-		p.vy -= 12 * dt // the slipstream carries everything up-screen
-		if p.life < p.span {
+		// past the ship the wake dives toward the camera: spread and grow
+		grow := 1 + 3.2*math.Max(0, (p.y-nose)/(float64(ScreenH)-nose))
+		p.scale += 2.4 * dt * grow
+		p.x += p.vx * dt * grow
+		p.y += p.vy * dt * grow
+		p.vx += math.Copysign(30, p.x-shipX) * dt * (grow - 1)
+		if p.life < p.span && p.y < gaugeTop+40 {
 			live = append(live, p)
 		}
 	}
@@ -212,28 +274,119 @@ func (a *App) updatePlasma(c reentry.Controls) {
 	}
 }
 
+// updateGround streams the perspective dot field toward the camera.
+func (a *App) updateGround() {
+	e, s := a.entry, a.entry.sim
+	kps := s.V * math.Cos(s.Gamma) / 1000 * entryTimeScale // km/s over ground
+	for i := range e.ground {
+		g := &e.ground[i]
+		g.ahead -= kps * dt
+		if g.ahead < 1.2 {
+			g.ahead = 44 + a.voy.Rng.Float64()*6
+			g.lat = s.Crossrange + (a.voy.Rng.Float64()-0.5)*56
+		}
+	}
+}
+
+// --- drawing ----------------------------------------------------------
+
+// rot rotates a point about the horizon pivot by the bank angle.
+func (e *entryState) rot(x, y float64) (float32, float32) {
+	hy := e.horizonY()
+	sin, cos := math.Sin(e.bank), math.Cos(e.bank)
+	dx, dy := x-shipX, y-hy
+	return float32(shipX + dx*cos - dy*sin), float32(hy + dx*sin + dy*cos)
+}
+
 func (a *App) drawEntry(screen *ebiten.Image) {
 	e, s := a.entry, a.entry.sim
-	cx, cy := float64(ScreenW)/2, 300.0
+	hkm := s.H / 1000
+	hy := e.horizonY()
+	qFrac := s.Pt.QShielded / s.Veh.TPSLimit
 
-	// the planet fills the bottom as the limb rises with descent
-	limb := 690 - 240*(1-s.H/122000)
-	vector.DrawFilledRect(screen, 0, float32(limb), ScreenW, float32(ScreenH)-float32(limb),
-		color.RGBA{14, 26, 34, 255}, false)
-	vector.StrokeLine(screen, 0, float32(limb), ScreenW, float32(limb), 2,
-		color.RGBA{29, 122, 36, 200}, false)
+	// --- sky: airglow band above the limb, thickening as the air does
+	airglow := math.Min(math.Max((100-hkm)/100, 0), 1)
+	for i := 0; i < 5; i++ {
+		bx1, by1 := e.rot(-200, hy-14*float64(i+1))
+		bx2, by2 := e.rot(float64(ScreenW)+200, hy-14*float64(i+1))
+		al := airglow * 0.16 * float64(5-i) / 5
+		vector.StrokeLine(screen, bx1, by1, bx2, by2, 15,
+			premul(color.RGBA{34, 74, 96, 255}, al), false)
+	}
 
-	// afterglow first (behind), then sheath, then streamers
-	order := [3]int{2, 1, 0}
+	// --- the limb: a curved arc, flattening as we descend
+	curve := 500 + (hkm/122)*-0 + (1-hkm/122)*11000 // px radius: 500 high → 11500 low
+	prev := false
+	var lx, ly float32
+	for x := -60.0; x <= float64(ScreenW)+60; x += 24 {
+		dx := x - shipX
+		y := hy + dx*dx/(2*curve)
+		px, py := e.rot(x, y)
+		if prev {
+			vector.StrokeLine(screen, lx, ly, px, py, 2,
+				premul(color.RGBA{29, 122, 36, 255}, 0.85), false)
+		}
+		lx, ly, prev = px, py, true
+	}
+
+	// --- ground: opaque bands from the limb down to the panel
+	for i := 0; i < 14; i++ {
+		d := 20 + 38*float64(i)
+		bx1, by1 := e.rot(-320, hy+d)
+		bx2, by2 := e.rot(float64(ScreenW)+320, hy+d)
+		vector.StrokeLine(screen, bx1, by1, bx2, by2, 40,
+			color.RGBA{uint8(11 + i/3), uint8(22 + i/2), uint8(27 + i/2), 255}, false)
+	}
+	groundVis := math.Min(math.Max((62-hkm)/45, 0), 1)
+	if groundVis > 0 {
+		pk := e.perspK()
+		for _, g := range e.ground {
+			if g.ahead < 1.2 {
+				continue
+			}
+			px := shipX + (g.lat-s.Crossrange)/g.ahead*430
+			py := hy + pk/g.ahead
+			if py > gaugeTop {
+				continue
+			}
+			rx, ry := e.rot(px, py)
+			al := groundVis * math.Min(6/g.ahead+0.15, 0.9)
+			r := float32(math.Min(0.8+7/g.ahead, 4))
+			vector.DrawFilledCircle(screen, rx, ry, r,
+				premul(color.RGBA{86, 148, 110, 255}, al), false)
+		}
+		// the pad resolves out of the haze on final
+		if s.PadDist > 1 && s.PadDist < 42 && hkm < 30 {
+			px := shipX + (0-s.Crossrange)/s.PadDist*430
+			py := hy + e.perspK()/s.PadDist
+			if py < gaugeTop {
+				rx, ry := e.rot(px, py)
+				sz := float32(math.Min(3+90/s.PadDist, 44))
+				vector.StrokeRect(screen, rx-sz, ry-sz/2, sz*2, sz, 2, colPhos, false)
+				vector.StrokeLine(screen, rx, ry-sz/2, rx, ry+sz/2, 1,
+					premul(colPhos, 0.5), false)
+				ui.DrawText(screen, fmt.Sprintf("PAD %.0f km", s.PadDist),
+					float64(rx+sz)+6, float64(ry)-6, 0.8)
+			}
+		}
+	}
+
+	// --- heat veil: the whole sky reddens as q̇ climbs
+	if qFrac > 0.15 {
+		vector.DrawFilledRect(screen, 0, 0, ScreenW, gaugeTop,
+			premul(color.RGBA{255, 120, 60, 255}, (qFrac-0.15)*0.22), false)
+	}
+
+	// --- plasma wake (drawn back-to-front: afterglow, sheath, streamers)
 	cols := [3]color.RGBA{colLi, colN2, colOI}
-	for _, kind := range order {
+	for _, kind := range [3]int{2, 1, 0} {
 		for _, p := range e.parts {
 			if p.kind != kind {
 				continue
 			}
 			f := 1 - p.life/p.span
-			c := premul(cols[kind], 0.78*f)
-			r := float32(1.5 + 2.5*f)
+			c := premul(cols[kind], 0.72*f)
+			r := float32((1.2 + 2.2*f) * p.scale)
 			if kind == 1 {
 				r += 2
 			}
@@ -241,30 +394,44 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 		}
 	}
 
-	// the mirror shell: a specular arc standing off the nose, dark inside
-	stand := 40 + 26*(s.Pt.Standoff-1)
-	shellCol := colEM
-	if s.Pt.InteractionQ < 1 {
-		// authority fading: the mirror thins and lets the violet through
-		shellCol = premul(colEM, 0.35+0.4*s.Pt.InteractionQ)
-	}
-	for i := 0; i < 24; i++ {
-		a0 := -1.25 + 2.5*float64(i)/24
-		a1 := -1.25 + 2.5*float64(i+1)/24
-		vector.StrokeLine(screen,
-			float32(cx+math.Sin(a0)*stand), float32(cy+math.Cos(a0)*stand*0.62),
-			float32(cx+math.Sin(a1)*stand), float32(cy+math.Cos(a1)*stand*0.62),
-			3, shellCol, false)
+	// --- the mirror shell: the bright arc standing off ahead of the nose
+	nose := shipY - 46.0
+	standPx := 16 + 22*(s.Pt.Standoff-1)
+	auth := math.Min(s.Pt.InteractionQ, 1)
+	shell := premul(colEM, 0.35+0.55*auth)
+	rx0 := 40 + standPx*0.85
+	prev = false
+	for i := 0; i <= 22; i++ {
+		ang := -1.25 + 2.5*float64(i)/22
+		x := shipX + math.Sin(ang)*rx0 - e.bank*30
+		y := nose - standPx + (1-math.Cos(ang))*standPx*0.75
+		px, py := float32(x), float32(y)
+		if prev {
+			vector.StrokeLine(screen, lx, ly, px, py, 3, shell, false)
+			// the hull-facing side stays dark: a thin void line inside
+			vector.StrokeLine(screen, lx, ly+4, px, py+4, 2,
+				premul(color.RGBA{5, 7, 10, 255}, 0.5), false)
+		}
+		lx, ly, prev = px, py, true
 	}
 
-	// the ship, nose down into the pillow
-	sprite := a.Catalog.Get(a.Cfg.PlayerShipID).SpriteFor(180)
+	// --- the ship, banked with the envelope
+	sprite := a.Catalog.Get(a.Cfg.PlayerShipID).Sprites[0]
 	b := sprite.Bounds()
 	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Translate(cx-float64(b.Dx())/2, cy-float64(b.Dy())-8)
+	op.GeoM.Translate(-float64(b.Dx())/2, -float64(b.Dy())/2)
+	op.GeoM.Rotate(e.bank * 0.7)
+	op.GeoM.Scale(1.35, 1.35)
+	op.GeoM.Translate(shipX, shipY-32)
 	screen.DrawImage(sprite, op)
 
 	a.drawEntryGauges(screen)
+
+	// deorbit plasma white-in
+	if e.flash > 0 {
+		vector.DrawFilledRect(screen, 0, 0, ScreenW, ScreenH,
+			premul(color.RGBA{255, 236, 220, 255}, e.flash), false)
+	}
 
 	if s.Status() != reentry.Flying {
 		a.drawEntryOutcome(screen)
@@ -301,9 +468,9 @@ func (a *App) drawEntryGauges(screen *ebiten.Image) {
 	mid := nx + nw/2
 	vector.DrawFilledRect(screen, float32(nx), float32(py+30), float32(nw), 60, colPanel, false)
 	vector.DrawFilledRect(screen, float32(mid-half), float32(py+30), float32(half*2), 60,
-		color.RGBA{94, 230, 138, 26}, false)
+		color.RGBA{9, 46, 24, 255}, false)
 	vector.StrokeRect(screen, float32(mid-half), float32(py+30), float32(half*2), 60, 1,
-		color.RGBA{94, 230, 138, 120}, false)
+		premul(colOI, 0.55), false)
 	vector.StrokeLine(screen, float32(mid), float32(py+26), float32(mid), float32(py+94), 1, colRule, false)
 	err := s.GammaError() / math.Max(s.Width, 0.01) // -1..1 across the band
 	npos := mid + math.Min(math.Max(err, -1.6), 1.6)*half
@@ -325,7 +492,11 @@ func (a *App) drawEntryGauges(screen *ebiten.Image) {
 
 	// right: budgets
 	bx := 640.0
-	hbar(screen, bx, py+30, 180, e.feed, colLi, fmt.Sprintf("LI FEED %3.0f g/s  [ ]", e.feed*200))
+	feedShow := e.feed
+	if e.auto {
+		feedShow = s.FeedUsed / 0.2
+	}
+	hbar(screen, bx, py+30, 180, feedShow, colLi, fmt.Sprintf("LI FEED %3.0f g/s  [ ]", s.FeedUsed*1000))
 	hbar(screen, bx, py+66, 180, s.Li/s.Veh.LiTank, colLi, fmt.Sprintf("LI RESERVE %.1f kg", s.Li))
 	hbar(screen, bx, py+102, 180, s.Pt.PowerDraw/s.Veh.PowerCap, colOI,
 		fmt.Sprintf("POWER %.1f / %.1f MW", s.Pt.PowerDraw/1e6, s.Veh.PowerCap/1e6))

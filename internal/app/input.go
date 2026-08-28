@@ -58,7 +58,7 @@ func (a *App) handlePlayerInput() {
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyL) && a.voy != nil {
 		if id := a.nearbyStellar(); id > 0 {
-			a.startEntry(id)
+			a.startDeorbit(id)
 		} else {
 			a.Console.Notifyf("No port in landing range — fly closer to a planet.")
 		}

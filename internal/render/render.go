@@ -72,6 +72,15 @@ func New(catalog *ship.Catalog) (*Renderer, error) {
 	return r, nil
 }
 
+// Planet returns a planet texture by 1-based sprite index, for scenes that
+// draw outside DrawWorld (the deorbit cinematic).
+func (r *Renderer) Planet(i int) *ebiten.Image {
+	if i < 1 || i > planetCount {
+		return r.planets[1]
+	}
+	return r.planets[i]
+}
+
 func onScreen(sp gmath.Vec2, margin, w, h float64) bool {
 	return sp.X > -margin && sp.X < w+margin && sp.Y > -margin && sp.Y < h+margin
 }

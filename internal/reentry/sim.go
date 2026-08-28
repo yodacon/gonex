@@ -94,6 +94,7 @@ type Sim struct {
 	skipT  float64 // seconds spent flat/climbing while hypersonic and high
 
 	// last evaluated point, for gauges
+	FeedUsed float64 // kg/s actually injected this frame
 	Pt      Point
 	RefG    float64 // reference gamma this frame, deg
 	Width   float64 // corridor half-width this frame, deg
@@ -177,6 +178,7 @@ func (s *Sim) Step(dt float64, c Controls) {
 		feed = s.Li / dt
 	}
 	s.Li -= feed * dt
+	s.FeedUsed = feed
 
 	b := s.Veh.CoilField
 	if c.Boost && s.boostTimer <= 0 && s.BoostLeft > 0 {

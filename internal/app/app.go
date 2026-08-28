@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"image/png"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -60,12 +61,13 @@ type App struct {
 	paused bool
 
 	// the reentry-trader layer
-	mode  appMode
-	gal   *galaxy.Galaxy
-	msn   *mission.Table
-	voy   *Voyage
-	entry *entryState
-	dock  *dockState
+	mode    appMode
+	gal     *galaxy.Galaxy
+	msn     *mission.Table
+	voy     *Voyage
+	entry   *entryState
+	dock    *dockState
+	deorbit *deorbitState
 
 	background *ebiten.Image
 	started    time.Time
@@ -73,6 +75,7 @@ type App struct {
 
 	shotPath  string // GONEX_SHOT: dump a frame here and exit (dev)
 	shotFrame int
+	shotAt    int
 }
 
 func New() (*App, error) {
@@ -121,10 +124,21 @@ func New() (*App, error) {
 		if id := 0; a.running() {
 			if _, err := fmt.Sscanf(boot, "entry %d", &id); err == nil && id > 0 {
 				a.startEntry(id)
+				if a.entry != nil && strings.HasSuffix(boot, " auto") {
+					a.entry.auto = true
+				}
+			} else if _, err := fmt.Sscanf(boot, "deorbit %d", &id); err == nil && id > 0 {
+				a.startDeorbit(id)
 			}
 		}
 	}
 	a.shotPath = os.Getenv("GONEX_SHOT")
+	a.shotAt = 300
+	if n := 0; os.Getenv("GONEX_SHOT_FRAME") != "" {
+		if _, err := fmt.Sscanf(os.Getenv("GONEX_SHOT_FRAME"), "%d", &n); err == nil {
+			a.shotAt = n
+		}
+	}
 	return a, nil
 }
 
@@ -154,7 +168,7 @@ func (a *App) newGame(scenePath string) {
 
 func (a *App) endGame() {
 	a.World = nil
-	a.voy, a.entry, a.dock = nil, nil, nil
+	a.voy, a.entry, a.dock, a.deorbit = nil, nil, nil, nil
 	a.mode = modeFlight
 	a.setGameStatus(false)
 }
@@ -217,6 +231,8 @@ func (a *App) Update() error {
 
 	if a.running() && !a.paused {
 		switch a.mode {
+		case modeDeorbit:
+			a.updateDeorbit()
 		case modeEntry:
 			if a.Console.State == console.Hidden {
 				a.updateEntry()
@@ -241,6 +257,10 @@ func (a *App) Update() error {
 
 func (a *App) Draw(screen *ebiten.Image) {
 	switch {
+	case a.running() && a.mode == modeDeorbit && a.deorbit != nil:
+		screen.Fill(color.RGBA{0, 0, 0, 255})
+		a.stars.Draw(screen)
+		a.drawDeorbit(screen)
 	case a.running() && a.mode == modeEntry && a.entry != nil:
 		screen.Fill(color.RGBA{5, 7, 10, 255})
 		a.stars.Draw(screen)
@@ -261,7 +281,7 @@ func (a *App) Draw(screen *ebiten.Image) {
 
 	// dev frame dump: GONEX_SHOT=<path> writes frame 300 and exits.
 	if a.shotPath != "" {
-		if a.shotFrame++; a.shotFrame == 300 {
+		if a.shotFrame++; a.shotFrame == a.shotAt {
 			pix := make([]byte, 4*ScreenW*ScreenH)
 			screen.ReadPixels(pix)
 			for i := 3; i < len(pix); i += 4 {

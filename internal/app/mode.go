@@ -13,6 +13,7 @@ type appMode int
 
 const (
 	modeFlight appMode = iota
+	modeDeorbit
 	modeEntry
 	modeLanded
 )

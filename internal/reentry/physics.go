@@ -186,9 +186,13 @@ func stateAt(h, v float64, veh Vehicle, prof Profile, b, feed float64) Point {
 	aMag := math.Pi * reff * reff
 	p.DragFactor = 1 + kLeak*math.Max(0, aMag/aBody-1)
 
-	// power ledger: phased array + cryo + seed + housekeeping
+	// power ledger: phased array + cryo + seed + housekeeping. The raw
+	// array term (zeta% of captured enthalpy flux) reaches hundreds of MW
+	// mid-entry — the envelope model's own energy-closure problem. The
+	// game's fiction: the MHD generator self-powers the array at a 0.1%
+	// net duty, so the ledger stays a meaningful budget, not a pegged bar.
 	fluxEnth := 0.5 * rho * v * v * v * aMag
-	pArr := 0.005 * fluxEnth / 0.35
+	pArr := 0.005 * fluxEnth / 0.35 * 1e-3
 	pCryo := 0.0
 	if b > 0 {
 		aDew := 4 * math.Pi * veh.NoseRadius * veh.NoseRadius

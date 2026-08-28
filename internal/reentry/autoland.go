@@ -33,8 +33,14 @@ func (a *autoland) fly(s *Sim, c Controls, dt float64) Controls {
 		feed *= 0.4 // preserve the reserve; accept the heat
 	}
 
-	// crossrange: roll toward the pad line, gently.
+	// crossrange: roll toward the pad line, gently — but never inside the
+	// deceleration pulse: rolling bleeds vertical lift exactly when the
+	// g-meter can least afford it, so the computer levels the envelope and
+	// finishes the crossrange work after the pulse.
 	roll := math.Min(math.Max(s.Crossrange*0.12, -0.6), 0.6)
+	if g := s.Pt.GLoad / s.Veh.GLimit; g > 0.55 {
+		roll *= math.Max(0, 1-(g-0.55)/0.2)
+	}
 
 	if s.Dmg.Computer > 30 {
 		// DEGRADED: lag and tremor scale with damage.

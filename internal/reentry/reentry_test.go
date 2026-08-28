@@ -6,8 +6,12 @@ import (
 )
 
 func runToEnd(s *Sim, c Controls, maxT float64) Status {
+	return runToEndDt(s, c, maxT, 0.2)
+}
+
+func runToEndDt(s *Sim, c Controls, maxT, dt float64) Status {
 	for s.Status() == Flying && s.T < maxT {
-		s.Step(0.2, c)
+		s.Step(dt, c)
 	}
 	return s.Status()
 }
@@ -105,5 +109,37 @@ func TestFailedComputerHandsBack(t *testing.T) {
 	}
 	if out.Pitch != 0.5 {
 		t.Fatalf("failed computer overrode the pilot's stick")
+	}
+}
+
+// The exporter hands out profiles across these ranges; the flight computer
+// must bring the ship down on all of them without ruinous damage, or the
+// galaxy is full of unlandable worlds.
+func TestAutolandAcrossProfiles(t *testing.T) {
+	for _, atmos := range []float64{0.8, 1.0, 1.2} {
+		for _, grav := range []float64{0.85, 1.0, 1.15} {
+			prof := Profile{AtmosScale: atmos, GravityScale: grav,
+				CorridorHalfWidth: 0.30}
+			s := New(Yodacon(), prof, 5)
+			st := runToEnd(s, Controls{Auto: true}, 2600)
+			if st != Landed || s.Dmg.Hull > 35 {
+				t.Errorf("atmos %.2f grav %.2f: %v hull %.1f%% (t=%.0f h=%.0f v=%.0f)",
+					atmos, grav, st, s.Dmg.Hull, s.T, s.H, s.V)
+			}
+		}
+	}
+}
+
+
+// The in-game step is dt=0.1 (60 fps at 6x time): the flight computer must
+// fly the checkride cleanly at that rate too, across seeds.
+func TestAutolandNominalAtGameRate(t *testing.T) {
+	for seed := int64(1); seed <= 6; seed++ {
+		s := New(Yodacon(), EarthProfile(), seed)
+		st := runToEndDt(s, Controls{Auto: true}, 2600, 0.1)
+		if st != Landed || s.Dmg.Hull > 20 {
+			t.Errorf("seed %d: %v hull %.1f%% computer %.0f%% (t=%.0f h=%.0f)",
+				seed, st, s.Dmg.Hull, s.Dmg.Computer, s.T, s.H)
+		}
 	}
 }

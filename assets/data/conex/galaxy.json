@@ -1568,8 +1568,8 @@
    "sprite": 3,
    "landing": {
     "corridorHalfWidthDeg": 0.22,
-    "atmosScale": 0.9,
-    "gravityScale": 0.85,
+    "atmosScale": 1.0,
+    "gravityScale": 1.0,
     "padBonus": 10000
    },
    "source": "base"
