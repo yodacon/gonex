@@ -1,0 +1,9 @@
+<Ship>
+    <ShipName Value="Callisto" />
+    <MaxVelocity Value="1000" />
+    <TurnSpeed Value="260" />
+    <Acceleration Value="1000" />
+    <Mass Value="5000" />
+    <CollisionRadius Value="32" />
+    <Damage Value="1" />
+</Ship>

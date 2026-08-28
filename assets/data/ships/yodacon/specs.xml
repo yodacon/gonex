@@ -1,0 +1,9 @@
+<Ship>
+    <ShipName Value="Yodacon" />
+    <MaxVelocity Value="500" />
+    <TurnSpeed Value="220" />
+    <Acceleration Value="400" />
+    <Mass Value="5000" />
+    <CollisionRadius Value="40" />
+    <Damage Value="1" />
+</Ship>

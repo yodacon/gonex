@@ -1,0 +1,299 @@
+// Package app wires everything into an ebiten.Game: game modes, windows,
+// menus, input and the console. It is the Go equivalent of konex's
+// konex.cpp + interface.cpp + game.cpp glue.
+package app
+
+import (
+	"fmt"
+	"image"
+	"image/color"
+	"image/png"
+	"os"
+	"time"
+
+	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/inpututil"
+
+	"yodacon.org/gonex/assets"
+	"yodacon.org/gonex/internal/camera"
+	"yodacon.org/gonex/internal/config"
+	"yodacon.org/gonex/internal/console"
+	"yodacon.org/gonex/internal/galaxy"
+	"yodacon.org/gonex/internal/mission"
+	"yodacon.org/gonex/internal/render"
+	"yodacon.org/gonex/internal/save"
+	"yodacon.org/gonex/internal/scene"
+	"yodacon.org/gonex/internal/ship"
+	"yodacon.org/gonex/internal/starfield"
+	"yodacon.org/gonex/internal/ui"
+	"yodacon.org/gonex/internal/world"
+)
+
+const (
+	ScreenW = 1024
+	ScreenH = 768
+	dt      = 1.0 / 60 // Ebitengine's fixed tick
+
+	AppName    = "Gonex"
+	AppVersion = "v0.1.0"
+	ConfigPath = "config.xml"
+)
+
+type App struct {
+	Cfg      *config.Config
+	Catalog  *ship.Catalog
+	Renderer *render.Renderer
+
+	Console *console.Console
+	cview   ui.ConsoleView
+
+	wm   ui.Manager
+	menu ui.Menu
+
+	menuWin, hudWin, miniMapWin, fullMapWin *ui.Window
+	targetWin, shipSelectWin, fpsWin        *ui.Window
+	galaxyWin                               *ui.Window
+
+	World  *world.World
+	cam    *camera.Camera
+	stars  *starfield.Field
+	paused bool
+
+	// the reentry-trader layer
+	mode  appMode
+	gal   *galaxy.Galaxy
+	msn   *mission.Table
+	voy   *Voyage
+	entry *entryState
+	dock  *dockState
+
+	background *ebiten.Image
+	started    time.Time
+	quitting   bool
+
+	shotPath  string // GONEX_SHOT: dump a frame here and exit (dev)
+	shotFrame int
+}
+
+func New() (*App, error) {
+	a := &App{
+		Cfg:     config.Load(ConfigPath),
+		Console: console.New(),
+		cam:     camera.New(ScreenW, ScreenH),
+		started: time.Now(),
+	}
+	a.cview.Console = a.Console
+
+	var err error
+	if a.Catalog, err = ship.LoadCatalog(); err != nil {
+		return nil, err
+	}
+	if a.Renderer, err = render.New(a.Catalog); err != nil {
+		return nil, err
+	}
+	if a.background, err = assets.Image("data/logos/conex.tga"); err != nil {
+		return nil, err
+	}
+	if a.gal, err = galaxy.Load(); err != nil {
+		return nil, err
+	}
+	if a.msn, err = mission.Load(); err != nil {
+		return nil, err
+	}
+
+	// A throwaway world provides the starfield's RNG before any game starts.
+	seedWorld := world.New(a.Catalog, time.Now().UnixNano())
+	a.stars = starfield.New(a.Cfg.StarCount, ScreenW, ScreenH, seedWorld.Rand)
+
+	a.buildWindows()
+	a.registerCommands()
+	a.showMainMenu()
+
+	a.Console.Printf("**************************************************************************")
+	a.Console.Printf("* Welcome to %s %s...", AppName, AppVersion)
+	a.Console.Printf("* Game initialization complete...")
+	a.Console.Printf("**************************************************************************")
+
+	// GONEX_BOOT skips the menus for development: "flight" starts a game,
+	// "entry <stellar>" starts a game and drops straight onto the corridor.
+	if boot := os.Getenv("GONEX_BOOT"); boot != "" {
+		a.newGame("sundaydrive.xml")
+		if id := 0; a.running() {
+			if _, err := fmt.Sscanf(boot, "entry %d", &id); err == nil && id > 0 {
+				a.startEntry(id)
+			}
+		}
+	}
+	a.shotPath = os.Getenv("GONEX_SHOT")
+	return a, nil
+}
+
+func (a *App) running() bool { return a.World != nil }
+
+// newGame builds a world for a scene and drops the player in, mirroring
+// game_CreateTeamDeathmatch / game_CreateSundayDrive.
+func (a *App) newGame(scenePath string) {
+	w := world.New(a.Catalog, time.Now().UnixNano())
+	w.Notify = a.Console.Notifyf
+	w.GodMode = a.Cfg.GodMode
+	if err := scene.Load(w, scenePath); err != nil {
+		a.Console.Printf("GAME: Failed to load %s: %v", scenePath, err)
+		return
+	}
+	player := w.NewShip(a.Cfg.PlayerShipID, world.Team(a.Cfg.Team), a.Cfg.PlayerName, world.KindLocal)
+	w.MainPlayer, w.ViewShip = player, player
+
+	a.World = w
+	a.mode = modeFlight
+	a.voy = newVoyage(time.Now().UnixNano())
+	a.enterSystem(a.voy.System)
+	a.setGameStatus(true)
+	a.Console.Printf("GAME: Scene loaded successfully %s", scenePath)
+	a.Console.Printf("GAME: Docked traffic control: M chart, J jump, L land near a planet")
+}
+
+func (a *App) endGame() {
+	a.World = nil
+	a.voy, a.entry, a.dock = nil, nil, nil
+	a.mode = modeFlight
+	a.setGameStatus(false)
+}
+
+func (a *App) saveGame() {
+	if !a.running() {
+		a.Console.Printf("- No game to save...")
+		return
+	}
+	if err := save.Write(a.World, save.DefaultPath); err != nil {
+		a.Console.Printf("- Save failed: %v", err)
+		return
+	}
+	a.hideMenu()
+	a.Console.Printf("- Game saved...")
+}
+
+func (a *App) loadGame() {
+	w := world.New(a.Catalog, time.Now().UnixNano())
+	w.Notify = a.Console.Notifyf
+	w.GodMode = a.Cfg.GodMode
+	if err := save.Read(w, save.DefaultPath); err != nil {
+		a.Console.Printf("- Load failed: %v", err)
+		return
+	}
+	a.World = w
+	a.setGameStatus(true)
+	a.Console.Printf("- Game loaded...")
+}
+
+func (a *App) quit() {
+	a.Console.Printf("* Game shutdown initiated...")
+	if err := a.Cfg.Save(ConfigPath); err != nil {
+		a.Console.Printf("CONFIG: save failed: %v", err)
+	} else {
+		a.Console.Printf("CONFIG: Configuration saved successfully")
+	}
+	a.quitting = true
+}
+
+func (a *App) Update() error {
+	if a.quitting {
+		return ebiten.Termination
+	}
+
+	if inpututil.IsKeyJustPressed(ebiten.KeyBackquote) {
+		a.Console.Toggle()
+	}
+	a.cview.Update(dt)
+
+	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		a.toggleMenu()
+	}
+	if a.running() && a.Console.State == console.Hidden &&
+		inpututil.IsKeyJustPressed(ebiten.KeyTab) {
+		a.toggleWindow(a.fullMapWin)
+	}
+
+	a.wm.Update(ScreenW, ScreenH)
+
+	if a.running() && !a.paused {
+		switch a.mode {
+		case modeEntry:
+			if a.Console.State == console.Hidden {
+				a.updateEntry()
+			}
+		case modeLanded:
+			if a.Console.State == console.Hidden {
+				a.updateDock()
+			}
+		default:
+			if a.Console.State == console.Hidden {
+				a.handlePlayerInput()
+			}
+			a.World.Update(dt)
+			if a.World.ViewShip != nil {
+				a.cam.Follow(a.World.ViewShip.Pos())
+			}
+			a.stars.Update(a.cam.X, a.cam.Y)
+		}
+	}
+	return nil
+}
+
+func (a *App) Draw(screen *ebiten.Image) {
+	switch {
+	case a.running() && a.mode == modeEntry && a.entry != nil:
+		screen.Fill(color.RGBA{5, 7, 10, 255})
+		a.stars.Draw(screen)
+		a.drawEntry(screen)
+	case a.running() && a.mode == modeLanded && a.dock != nil:
+		a.drawDock(screen)
+	case a.running():
+		screen.Fill(color.RGBA{0, 0, 0, 255})
+		a.stars.Draw(screen)
+		a.Renderer.DrawWorld(screen, a.World, a.cam)
+		a.Renderer.DrawTargetOverlay(screen, a.World, a.cam)
+	default:
+		a.drawSplash(screen)
+	}
+	a.cview.DrawNotify(screen, dt)
+	a.wm.Draw(screen)
+	a.cview.Draw(screen, ScreenW)
+
+	// dev frame dump: GONEX_SHOT=<path> writes frame 300 and exits.
+	if a.shotPath != "" {
+		if a.shotFrame++; a.shotFrame == 300 {
+			pix := make([]byte, 4*ScreenW*ScreenH)
+			screen.ReadPixels(pix)
+			for i := 3; i < len(pix); i += 4 {
+				pix[i] = 255
+			}
+			img := &image.RGBA{Pix: pix, Stride: 4 * ScreenW,
+				Rect: image.Rect(0, 0, ScreenW, ScreenH)}
+			if f, err := os.Create(a.shotPath); err == nil {
+				png.Encode(f, img)
+				f.Close()
+			}
+			a.quitting = true
+		}
+	}
+}
+
+// drawSplash shows the ConEx logo with the half-second fade konex opened with.
+func (a *App) drawSplash(screen *ebiten.Image) {
+	alpha := float32(time.Since(a.started).Seconds() / 0.5)
+	if alpha > 1 {
+		alpha = 1
+	}
+	b := a.background.Bounds()
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Scale(ScreenW/float64(b.Dx()), ScreenH/float64(b.Dy()))
+	op.ColorScale.ScaleAlpha(alpha)
+	screen.DrawImage(a.background, op)
+}
+
+func (a *App) Layout(_, _ int) (int, int) { return ScreenW, ScreenH }
+
+// uptime supports the console's uptime command.
+func (a *App) uptime() string {
+	return fmt.Sprintf("- Running for %0.2f second(s)", time.Since(a.started).Seconds())
+}

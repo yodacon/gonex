@@ -1,0 +1,9 @@
+<Ship>
+    <ShipName Value="Dart" />
+    <MaxVelocity Value="500" />
+    <TurnSpeed Value="200" />
+    <Acceleration Value="400" />
+    <Mass Value="5000" />
+    <CollisionRadius Value="50" />
+    <Damage Value="1" />
+</Ship>

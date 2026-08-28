@@ -1,0 +1,9 @@
+<Ship>
+    <ShipName Value="Citrus" />
+    <MaxVelocity Value="1000" />
+    <TurnSpeed Value="280" />
+    <Acceleration Value="800" />
+    <Mass Value="5000" />
+    <CollisionRadius Value="16" />
+    <Damage Value="1" />
+</Ship>

@@ -1,0 +1,9 @@
+<Ship>
+    <ShipName Value="Advisor" />
+    <MaxVelocity Value="1000" />
+    <TurnSpeed Value="220" />
+    <Acceleration Value="900" />
+    <Mass Value="5000" />
+    <CollisionRadius Value="16" />
+    <Damage Value="100" />
+</Ship>

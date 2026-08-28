@@ -1,0 +1,3090 @@
+{
+ "systems": {
+  "128": {
+   "name": "ConEx",
+   "x": 24,
+   "y": -59,
+   "links": [
+    136,
+    137,
+    164,
+    165
+   ],
+   "stellars": [
+    133
+   ],
+   "govt": "Consolidated Express",
+   "source": "conex-override"
+  },
+  "129": {
+   "name": "Sol",
+   "x": 0,
+   "y": 0,
+   "links": [
+    130,
+    131,
+    132,
+    133
+   ],
+   "stellars": [
+    128,
+    129,
+    132,
+    130
+   ],
+   "govt": "Confederation",
+   "source": "conex-override"
+  },
+  "130": {
+   "name": "Centauri",
+   "x": -15,
+   "y": -17,
+   "links": [
+    129,
+    135,
+    136
+   ],
+   "stellars": [
+    131
+   ],
+   "govt": "Confederation",
+   "source": "base"
+  },
+  "131": {
+   "name": "Tau Ceti",
+   "x": -17,
+   "y": 27,
+   "links": [
+    129,
+    135,
+    139,
+    140,
+    197
+   ],
+   "stellars": [
+    145,
+    146,
+    177
+   ],
+   "govt": "Confederation",
+   "source": "base"
+  },
+  "132": {
+   "name": "Eridani",
+   "x": 38,
+   "y": 10,
+   "links": [
+    129,
+    134,
+    145,
+    197
+   ],
+   "stellars": [
+    147
+   ],
+   "govt": "Confederation",
+   "source": "base"
+  },
+  "133": {
+   "name": "Barnard",
+   "x": 24,
+   "y": -14,
+   "links": [
+    129,
+    145,
+    236
+   ],
+   "stellars": [
+    150
+   ],
+   "govt": "Confederation",
+   "source": "conex-override"
+  },
+  "134": {
+   "name": "Vega",
+   "x": 38,
+   "y": 46,
+   "links": [
+    132,
+    140,
+    143
+   ],
+   "stellars": [
+    148,
+    149
+   ],
+   "govt": "Confederation",
+   "source": "base"
+  },
+  "135": {
+   "name": "Sirius",
+   "x": -32,
+   "y": 5,
+   "links": [
+    130,
+    131,
+    138
+   ],
+   "stellars": [
+    144,
+    143
+   ],
+   "govt": "Confederation",
+   "source": "base"
+  },
+  "136": {
+   "name": "Rigel",
+   "x": -1,
+   "y": -35,
+   "links": [
+    128,
+    130,
+    151,
+    236
+   ],
+   "stellars": [
+    134
+   ],
+   "govt": "Confederation",
+   "source": "conex-override"
+  },
+  "137": {
+   "name": "Capella",
+   "x": 37,
+   "y": -40,
+   "links": [
+    128,
+    145,
+    156,
+    236
+   ],
+   "stellars": [
+    135
+   ],
+   "govt": "Consolidated Express",
+   "source": "conex-override"
+  },
+  "138": {
+   "name": "Altair",
+   "x": -49,
+   "y": -15,
+   "links": [
+    135,
+    144,
+    150
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "139": {
+   "name": "Antares",
+   "x": -36,
+   "y": 40,
+   "links": [
+    131,
+    146,
+    149
+   ],
+   "stellars": [
+    154,
+    155
+   ],
+   "govt": "Confederation",
+   "source": "base"
+  },
+  "140": {
+   "name": "Pollux",
+   "x": 5,
+   "y": 53,
+   "links": [
+    131,
+    134,
+    141,
+    147,
+    197
+   ],
+   "stellars": [
+    184,
+    185
+   ],
+   "govt": "Confederation",
+   "source": "base"
+  },
+  "141": {
+   "name": "Castor",
+   "x": -21,
+   "y": 64,
+   "links": [
+    140,
+    159,
+    171
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "142": {
+   "name": "Deneb",
+   "x": 53,
+   "y": 63,
+   "links": [
+    147,
+    148
+   ],
+   "stellars": [
+    212
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "143": {
+   "name": "Regulus",
+   "x": 62,
+   "y": 31,
+   "links": [
+    134,
+    148,
+    152
+   ],
+   "stellars": [
+    164,
+    175
+   ],
+   "govt": "Confederation",
+   "source": "base"
+  },
+  "144": {
+   "name": "Polaris",
+   "x": -31,
+   "y": -36,
+   "links": [
+    138,
+    151,
+    153
+   ],
+   "stellars": [
+    140
+   ],
+   "govt": "Confederation",
+   "source": "base"
+  },
+  "145": {
+   "name": "Zebetrious",
+   "x": 55,
+   "y": -21,
+   "links": [
+    132,
+    133,
+    137,
+    152,
+    156
+   ],
+   "stellars": [],
+   "govt": "Consolidated Express",
+   "source": "conex-override"
+  },
+  "146": {
+   "name": "Mentos",
+   "x": -52,
+   "y": 55,
+   "links": [
+    139,
+    160,
+    171
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "147": {
+   "name": "Alcyon",
+   "x": 30,
+   "y": 73,
+   "links": [
+    140,
+    142,
+    173,
+    175,
+    193
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "148": {
+   "name": "Tryvin",
+   "x": 71,
+   "y": 47,
+   "links": [
+    142,
+    143,
+    158,
+    186
+   ],
+   "stellars": [],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "149": {
+   "name": "Diphidia",
+   "x": -52,
+   "y": 18,
+   "links": [
+    139,
+    150,
+    161
+   ],
+   "stellars": [
+    176
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "150": {
+   "name": "Zaxted",
+   "x": -70,
+   "y": 0,
+   "links": [
+    138,
+    149,
+    161
+   ],
+   "stellars": [
+    166,
+    165
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "151": {
+   "name": "Matar",
+   "x": -8,
+   "y": -52,
+   "links": [
+    136,
+    144,
+    154,
+    155
+   ],
+   "stellars": [
+    139
+   ],
+   "govt": "Confederation",
+   "source": "base"
+  },
+  "152": {
+   "name": "Pelagon",
+   "x": 71,
+   "y": 15,
+   "links": [
+    143,
+    145,
+    163,
+    170,
+    235
+   ],
+   "stellars": [
+    215,
+    178
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "153": {
+   "name": "Propus",
+   "x": -63,
+   "y": -32,
+   "links": [
+    144,
+    162,
+    167
+   ],
+   "stellars": [
+    172,
+    173,
+    174
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "154": {
+   "name": "Risa",
+   "x": -48,
+   "y": -56,
+   "links": [
+    151,
+    162,
+    168
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "155": {
+   "name": "Yemuro",
+   "x": -15,
+   "y": -68,
+   "links": [
+    151,
+    165,
+    168,
+    169
+   ],
+   "stellars": [
+    156
+   ],
+   "govt": "Consolidated Express",
+   "source": "conex-override"
+  },
+  "156": {
+   "name": "Arrakis",
+   "x": 64,
+   "y": -52,
+   "links": [
+    137,
+    145,
+    157
+   ],
+   "stellars": [
+    136
+   ],
+   "govt": "Consolidated Express",
+   "source": "conex-override"
+  },
+  "157": {
+   "name": "Nemesis",
+   "x": 87,
+   "y": -37,
+   "links": [
+    156,
+    180,
+    195,
+    235
+   ],
+   "stellars": [
+    192
+   ],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "158": {
+   "name": "Aries",
+   "x": 80,
+   "y": 74,
+   "links": [
+    148,
+    193
+   ],
+   "stellars": [
+    213
+   ],
+   "govt": "Cydonian",
+   "source": "base"
+  },
+  "159": {
+   "name": "Ursa",
+   "x": 1,
+   "y": 79,
+   "links": [
+    141,
+    173
+   ],
+   "stellars": [
+    188
+   ],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "160": {
+   "name": "Sauron",
+   "x": -69,
+   "y": 38,
+   "links": [
+    146,
+    161,
+    172
+   ],
+   "stellars": [
+    191
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "161": {
+   "name": "Farazon",
+   "x": -88,
+   "y": 17,
+   "links": [
+    149,
+    150,
+    160,
+    181,
+    185
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "162": {
+   "name": "Curzon",
+   "x": -74,
+   "y": -50,
+   "links": [
+    153,
+    154,
+    188,
+    192
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "163": {
+   "name": "Jadzia",
+   "x": 94,
+   "y": 4,
+   "links": [
+    152,
+    235
+   ],
+   "stellars": [
+    193
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "164": {
+   "name": "Vulcan",
+   "x": 48,
+   "y": -72,
+   "links": [
+    128,
+    174,
+    189,
+    198
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "165": {
+   "name": "Kathoon",
+   "x": 14,
+   "y": -81,
+   "links": [
+    155,
+    174
+   ],
+   "stellars": [
+    138
+   ],
+   "govt": "Consolidated Express",
+   "source": "conex-override"
+  },
+  "166": {
+   "name": "Thanos",
+   "x": -38,
+   "y": 78,
+   "links": [
+    176
+   ],
+   "stellars": [
+    186,
+    187
+   ],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "167": {
+   "name": "Darven",
+   "x": -85,
+   "y": -17,
+   "links": [
+    153,
+    185,
+    191
+   ],
+   "stellars": [
+    182,
+    183
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "168": {
+   "name": "Zaphod",
+   "x": -49,
+   "y": -74,
+   "links": [
+    154,
+    155,
+    177
+   ],
+   "stellars": [
+    159
+   ],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "169": {
+   "name": "Turin",
+   "x": -23,
+   "y": -86,
+   "links": [
+    155,
+    178,
+    187
+   ],
+   "stellars": [
+    160
+   ],
+   "govt": "Consolidated Express",
+   "source": "conex-override"
+  },
+  "170": {
+   "name": "Sirgil",
+   "x": 100,
+   "y": 31,
+   "links": [
+    152,
+    194,
+    228
+   ],
+   "stellars": [
+    209,
+    210
+   ],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "171": {
+   "name": "Tiber",
+   "x": -63,
+   "y": 71,
+   "links": [
+    141,
+    146,
+    176
+   ],
+   "stellars": [
+    195,
+    196
+   ],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "172": {
+   "name": "Canopus",
+   "x": -83,
+   "y": 53,
+   "links": [
+    160,
+    181,
+    190
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "173": {
+   "name": "Agena",
+   "x": -8,
+   "y": 99,
+   "links": [
+    147,
+    159,
+    209,
+    210
+   ],
+   "stellars": [
+    199
+   ],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "174": {
+   "name": "Spica",
+   "x": 36,
+   "y": -93,
+   "links": [
+    164,
+    165,
+    224
+   ],
+   "stellars": [
+    137
+   ],
+   "govt": "Consolidated Express",
+   "source": "conex-override"
+  },
+  "175": {
+   "name": "Adhara",
+   "x": 35,
+   "y": 100,
+   "links": [
+    147,
+    210
+   ],
+   "stellars": [
+    200,
+    201
+   ],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "176": {
+   "name": "El Santo",
+   "x": -56,
+   "y": 91,
+   "links": [
+    166,
+    171,
+    184,
+    209
+   ],
+   "stellars": [
+    151
+   ],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "177": {
+   "name": "Alkaid",
+   "x": -76,
+   "y": -71,
+   "links": [
+    168,
+    187
+   ],
+   "stellars": [
+    162,
+    163
+   ],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "178": {
+   "name": "Cygnus",
+   "x": 0,
+   "y": -98,
+   "links": [
+    169,
+    227
+   ],
+   "stellars": [
+    194
+   ],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "179": {
+   "name": "Torgo",
+   "x": 128,
+   "y": -32,
+   "links": [
+    180
+   ],
+   "stellars": [
+    142
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "180": {
+   "name": "Manos",
+   "x": 106,
+   "y": -44,
+   "links": [
+    157,
+    179
+   ],
+   "stellars": [
+    141
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "181": {
+   "name": "Gamera",
+   "x": -110,
+   "y": 37,
+   "links": [
+    161,
+    172,
+    182,
+    183
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "182": {
+   "name": "Guiron",
+   "x": -129,
+   "y": 18,
+   "links": [
+    181
+   ],
+   "stellars": [
+    197
+   ],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "183": {
+   "name": "Zigra",
+   "x": -125,
+   "y": 57,
+   "links": [
+    181
+   ],
+   "stellars": [
+    198
+   ],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "184": {
+   "name": "Osiris",
+   "x": -90,
+   "y": 91,
+   "links": [
+    176,
+    190,
+    208
+   ],
+   "stellars": [
+    204,
+    205
+   ],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "185": {
+   "name": "Perseus",
+   "x": -108,
+   "y": 0,
+   "links": [
+    161,
+    167
+   ],
+   "stellars": [
+    189,
+    190
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "186": {
+   "name": "Scorpio",
+   "x": 97,
+   "y": 65,
+   "links": [
+    148,
+    212
+   ],
+   "stellars": [
+    211
+   ],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "187": {
+   "name": "Persephone",
+   "x": -48,
+   "y": -100,
+   "links": [
+    169,
+    177,
+    196,
+    199
+   ],
+   "stellars": [
+    180,
+    181
+   ],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "188": {
+   "name": "Orion",
+   "x": -98,
+   "y": -37,
+   "links": [
+    162,
+    191,
+    202
+   ],
+   "stellars": [
+    169,
+    170
+   ],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "189": {
+   "name": "Apollo",
+   "x": 85,
+   "y": -66,
+   "links": [
+    164,
+    220
+   ],
+   "stellars": [
+    179
+   ],
+   "govt": "Consolidated Express",
+   "source": "conex-override"
+  },
+  "190": {
+   "name": "Olympus",
+   "x": -98,
+   "y": 72,
+   "links": [
+    172,
+    184,
+    206,
+    207
+   ],
+   "stellars": [
+    202,
+    203
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "191": {
+   "name": "Atropos",
+   "x": -118,
+   "y": -18,
+   "links": [
+    167,
+    188,
+    203
+   ],
+   "stellars": [
+    171
+   ],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "192": {
+   "name": "Clotho",
+   "x": -101,
+   "y": -58,
+   "links": [
+    162,
+    196,
+    201
+   ],
+   "stellars": [
+    167,
+    168
+   ],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "193": {
+   "name": "Lethe",
+   "x": 76,
+   "y": 95,
+   "links": [
+    147,
+    158,
+    211
+   ],
+   "stellars": [
+    214
+   ],
+   "govt": "Lethean",
+   "source": "base"
+  },
+  "194": {
+   "name": "Virgo",
+   "x": 121,
+   "y": 16,
+   "links": [
+    170,
+    195,
+    216
+   ],
+   "stellars": [
+    208
+   ],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "195": {
+   "name": "Topaz",
+   "x": 120,
+   "y": -7,
+   "links": [
+    157,
+    194,
+    217,
+    235
+   ],
+   "stellars": [
+    206,
+    207
+   ],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "196": {
+   "name": "Satori",
+   "x": -84,
+   "y": -94,
+   "links": [
+    187,
+    192,
+    200
+   ],
+   "stellars": [
+    161
+   ],
+   "govt": "Rebellion",
+   "source": "base"
+  },
+  "197": {
+   "name": "Procyon",
+   "x": 18,
+   "y": 24,
+   "links": [
+    131,
+    132,
+    140
+   ],
+   "stellars": [
+    152
+   ],
+   "govt": "Confederation",
+   "source": "base"
+  },
+  "198": {
+   "name": "Gymkata",
+   "x": 72,
+   "y": -87,
+   "links": [
+    164,
+    222
+   ],
+   "stellars": [
+    153
+   ],
+   "govt": "Consolidated Express",
+   "source": "conex-override"
+  },
+  "199": {
+   "name": "NGC-2468",
+   "x": -68,
+   "y": -122,
+   "links": [
+    187
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "200": {
+   "name": "THX-1138",
+   "x": -106,
+   "y": -104,
+   "links": [
+    196
+   ],
+   "stellars": [
+    157
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "201": {
+   "name": "NGC-5638",
+   "x": -119,
+   "y": -71,
+   "links": [
+    192
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "202": {
+   "name": "NGC-8457",
+   "x": -137,
+   "y": -44,
+   "links": [
+    188
+   ],
+   "stellars": [
+    158
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "203": {
+   "name": "NGC-6484",
+   "x": -151,
+   "y": -9,
+   "links": [
+    191,
+    231
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "204": {
+   "name": "NGC-1592",
+   "x": -170,
+   "y": 33,
+   "links": [
+    205,
+    231
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "205": {
+   "name": "NGC-4812",
+   "x": -151,
+   "y": 46,
+   "links": [
+    204
+   ],
+   "stellars": [
+    217,
+    218
+   ],
+   "govt": "Pirates",
+   "source": "base"
+  },
+  "206": {
+   "name": "NGC-0551",
+   "x": -136,
+   "y": 79,
+   "links": [
+    190
+   ],
+   "stellars": [
+    219
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "207": {
+   "name": "NGC-1325",
+   "x": -122,
+   "y": 103,
+   "links": [
+    190
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "208": {
+   "name": "NGC-6564",
+   "x": -75,
+   "y": 112,
+   "links": [
+    184
+   ],
+   "stellars": [
+    220,
+    221
+   ],
+   "govt": "Confederation",
+   "source": "base"
+  },
+  "209": {
+   "name": "NGC-9758",
+   "x": -31,
+   "y": 121,
+   "links": [
+    173,
+    176,
+    232
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "210": {
+   "name": "NGC-0630",
+   "x": 16,
+   "y": 115,
+   "links": [
+    173,
+    175,
+    230
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "211": {
+   "name": "NGC-8113",
+   "x": 71,
+   "y": 114,
+   "links": [
+    193,
+    229
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "212": {
+   "name": "NGC-0317",
+   "x": 114,
+   "y": 100,
+   "links": [
+    186
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "213": {
+   "name": "NGC-0805",
+   "x": 122,
+   "y": 80,
+   "links": [
+    214
+   ],
+   "stellars": [
+    226
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "214": {
+   "name": "NGC-2143",
+   "x": 143,
+   "y": 60,
+   "links": [
+    213,
+    228
+   ],
+   "stellars": [
+    227
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "215": {
+   "name": "NGC-5528",
+   "x": 135,
+   "y": 36,
+   "links": [
+    228
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "216": {
+   "name": "NGC-1357",
+   "x": 150,
+   "y": 9,
+   "links": [
+    194
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "217": {
+   "name": "NGC-9846",
+   "x": 146,
+   "y": -19,
+   "links": [
+    195
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "218": {
+   "name": "NGC-0595",
+   "x": 160,
+   "y": -38,
+   "links": [
+    219
+   ],
+   "stellars": [
+    228,
+    229
+   ],
+   "govt": "Pirates",
+   "source": "base"
+  },
+  "219": {
+   "name": "NGC-1249",
+   "x": 133,
+   "y": -50,
+   "links": [
+    218,
+    220
+   ],
+   "stellars": [
+    230
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "220": {
+   "name": "NGC-7665",
+   "x": 124,
+   "y": -69,
+   "links": [
+    189,
+    219,
+    221
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "221": {
+   "name": "NGC-8724",
+   "x": 160,
+   "y": -60,
+   "links": [
+    220
+   ],
+   "stellars": [
+    231
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "222": {
+   "name": "NGC-6849",
+   "x": 87,
+   "y": -105,
+   "links": [
+    198
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "223": {
+   "name": "NGC-1027",
+   "x": 65,
+   "y": -121,
+   "links": [
+    224
+   ],
+   "stellars": [
+    232,
+    233
+   ],
+   "govt": "Pirates",
+   "source": "base"
+  },
+  "224": {
+   "name": "NGC-5465",
+   "x": 31,
+   "y": -111,
+   "links": [
+    174,
+    223,
+    225
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "225": {
+   "name": "NGC-9517",
+   "x": 18,
+   "y": -130,
+   "links": [
+    224,
+    226
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "226": {
+   "name": "NGC-6548",
+   "x": -1,
+   "y": -144,
+   "links": [
+    225
+   ],
+   "stellars": [
+    223
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "227": {
+   "name": "NGC-1023",
+   "x": -19,
+   "y": -120,
+   "links": [
+    178,
+    233
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "228": {
+   "name": "NGC-6762",
+   "x": 114,
+   "y": 49,
+   "links": [
+    170,
+    214,
+    215
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "229": {
+   "name": "NGC-1896",
+   "x": 54,
+   "y": 130,
+   "links": [
+    211,
+    234
+   ],
+   "stellars": [
+    224,
+    225
+   ],
+   "govt": "Pirates",
+   "source": "base"
+  },
+  "230": {
+   "name": "NGC-1776",
+   "x": 7,
+   "y": 141,
+   "links": [
+    210
+   ],
+   "stellars": [
+    234
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "231": {
+   "name": "NGC-1718",
+   "x": -171,
+   "y": 8,
+   "links": [
+    203,
+    204
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "232": {
+   "name": "NGC-1091",
+   "x": -25,
+   "y": 148,
+   "links": [
+    209
+   ],
+   "stellars": [
+    222
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "233": {
+   "name": "NGC-1701",
+   "x": -38,
+   "y": -138,
+   "links": [
+    227
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "234": {
+   "name": "NGC-4561",
+   "x": 66,
+   "y": 155,
+   "links": [
+    229
+   ],
+   "stellars": [],
+   "govt": "",
+   "source": "base"
+  },
+  "235": {
+   "name": "Nexus",
+   "x": 82,
+   "y": -15,
+   "links": [
+    152,
+    157,
+    163,
+    195
+   ],
+   "stellars": [
+    216
+   ],
+   "govt": "",
+   "source": "base"
+  },
+  "236": {
+   "name": "Exeon",
+   "x": 18,
+   "y": -30,
+   "links": [
+    133,
+    136,
+    137
+   ],
+   "stellars": [
+    235,
+    238
+   ],
+   "govt": "Consolidated Express",
+   "source": "conex"
+  }
+ },
+ "stellars": {
+  "128": {
+   "name": "Earth",
+   "system": 129,
+   "govt": "Confederation",
+   "tech": 5,
+   "sprite": 3,
+   "landing": {
+    "corridorHalfWidthDeg": 0.22,
+    "atmosScale": 0.9,
+    "gravityScale": 0.85,
+    "padBonus": 10000
+   },
+   "source": "base"
+  },
+  "129": {
+   "name": "Stardock Alpha",
+   "system": 129,
+   "govt": "Confederation",
+   "tech": 5,
+   "sprite": 4,
+   "landing": {
+    "corridorHalfWidthDeg": 0.52,
+    "atmosScale": 1.1,
+    "gravityScale": 1.15,
+    "padBonus": 10000
+   },
+   "source": "base"
+  },
+  "130": {
+   "name": "Mars",
+   "system": 129,
+   "govt": "Confederation",
+   "tech": 0,
+   "sprite": 5,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 0.8,
+    "gravityScale": 1.05,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "131": {
+   "name": "Landfall",
+   "system": 130,
+   "govt": "Confederation",
+   "tech": 4,
+   "sprite": 6,
+   "landing": {
+    "corridorHalfWidthDeg": 0.532,
+    "atmosScale": 1.0,
+    "gravityScale": 0.95,
+    "padBonus": 8000
+   },
+   "source": "base"
+  },
+  "132": {
+   "name": "Luna",
+   "system": 129,
+   "govt": "Confederation",
+   "tech": 0,
+   "sprite": 7,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.2,
+    "gravityScale": 0.85,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "133": {
+   "name": "ConEx",
+   "system": 128,
+   "govt": "Consolidated Express",
+   "tech": 20,
+   "sprite": 8,
+   "landing": {
+    "corridorHalfWidthDeg": 0.34,
+    "atmosScale": 0.9,
+    "gravityScale": 1.15,
+    "padBonus": 40000
+   },
+   "source": "conex-override"
+  },
+  "134": {
+   "name": "New Britain",
+   "system": 136,
+   "govt": "Confederation",
+   "tech": 3,
+   "sprite": 9,
+   "landing": {
+    "corridorHalfWidthDeg": 0.544,
+    "atmosScale": 1.1,
+    "gravityScale": 1.05,
+    "padBonus": 6000
+   },
+   "source": "base"
+  },
+  "135": {
+   "name": "Capella",
+   "system": 137,
+   "govt": "Consolidated Express",
+   "tech": 2,
+   "sprite": 10,
+   "landing": {
+    "corridorHalfWidthDeg": 0.556,
+    "atmosScale": 0.8,
+    "gravityScale": 0.95,
+    "padBonus": 4000
+   },
+   "source": "conex-override"
+  },
+  "136": {
+   "name": "Dune",
+   "system": 156,
+   "govt": "",
+   "tech": 0,
+   "sprite": 11,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.0,
+    "gravityScale": 0.85,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "137": {
+   "name": "Spica",
+   "system": 174,
+   "govt": "Consolidated Express",
+   "tech": 4,
+   "sprite": 12,
+   "landing": {
+    "corridorHalfWidthDeg": 0.532,
+    "atmosScale": 1.2,
+    "gravityScale": 1.15,
+    "padBonus": 8000
+   },
+   "source": "conex-override"
+  },
+  "138": {
+   "name": "Maxwell's Purchase",
+   "system": 165,
+   "govt": "Consolidated Express",
+   "tech": 1,
+   "sprite": 13,
+   "landing": {
+    "corridorHalfWidthDeg": 0.568,
+    "atmosScale": 0.9,
+    "gravityScale": 1.05,
+    "padBonus": 2000
+   },
+   "source": "conex-override"
+  },
+  "139": {
+   "name": "Hodgson's World",
+   "system": 151,
+   "govt": "Confederation",
+   "tech": 0,
+   "sprite": 14,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.1,
+    "gravityScale": 0.95,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "140": {
+   "name": "Northstar",
+   "system": 144,
+   "govt": "Confederation",
+   "tech": 2,
+   "sprite": 15,
+   "landing": {
+    "corridorHalfWidthDeg": 0.556,
+    "atmosScale": 0.8,
+    "gravityScale": 0.85,
+    "padBonus": 4000
+   },
+   "source": "base"
+  },
+  "141": {
+   "name": "Master's Planet",
+   "system": 180,
+   "govt": "",
+   "tech": 0,
+   "sprite": 16,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.0,
+    "gravityScale": 1.15,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "142": {
+   "name": "Torgo Prime",
+   "system": 179,
+   "govt": "",
+   "tech": 0,
+   "sprite": 17,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.2,
+    "gravityScale": 1.05,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "143": {
+   "name": "Sirius III",
+   "system": 135,
+   "govt": "",
+   "tech": 0,
+   "sprite": 18,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 0.9,
+    "gravityScale": 0.95,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "144": {
+   "name": "Sirius Station",
+   "system": 135,
+   "govt": "Confederation",
+   "tech": 2,
+   "sprite": 1,
+   "landing": {
+    "corridorHalfWidthDeg": 0.556,
+    "atmosScale": 1.1,
+    "gravityScale": 0.85,
+    "padBonus": 4000
+   },
+   "source": "base"
+  },
+  "145": {
+   "name": "Tau Ceti IV",
+   "system": 131,
+   "govt": "",
+   "tech": 0,
+   "sprite": 2,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 0.8,
+    "gravityScale": 1.15,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "146": {
+   "name": "Merlin",
+   "system": 131,
+   "govt": "Confederation",
+   "tech": 0,
+   "sprite": 3,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.0,
+    "gravityScale": 1.05,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "147": {
+   "name": "Tabletop",
+   "system": 132,
+   "govt": "Confederation",
+   "tech": 0,
+   "sprite": 4,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.2,
+    "gravityScale": 0.95,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "148": {
+   "name": "Enyo's World",
+   "system": 134,
+   "govt": "",
+   "tech": 0,
+   "sprite": 5,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 0.9,
+    "gravityScale": 0.85,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "149": {
+   "name": "Enyo Fuel Refinery",
+   "system": 134,
+   "govt": "Confederation",
+   "tech": 0,
+   "sprite": 6,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.1,
+    "gravityScale": 1.15,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "150": {
+   "name": "New Sahara",
+   "system": 133,
+   "govt": "Confederation",
+   "tech": 2,
+   "sprite": 7,
+   "landing": {
+    "corridorHalfWidthDeg": 0.556,
+    "atmosScale": 0.8,
+    "gravityScale": 1.05,
+    "padBonus": 4000
+   },
+   "source": "base"
+  },
+  "151": {
+   "name": "Samson's Planet",
+   "system": 176,
+   "govt": "Rebellion",
+   "tech": 0,
+   "sprite": 8,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.0,
+    "gravityScale": 0.95,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "152": {
+   "name": "Plateau",
+   "system": 197,
+   "govt": "Confederation",
+   "tech": 0,
+   "sprite": 9,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.2,
+    "gravityScale": 0.85,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "153": {
+   "name": "Hikeeba",
+   "system": 198,
+   "govt": "Consolidated Express",
+   "tech": 0,
+   "sprite": 10,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 0.9,
+    "gravityScale": 1.15,
+    "padBonus": 0
+   },
+   "source": "conex-override"
+  },
+  "154": {
+   "name": "New Providence",
+   "system": 139,
+   "govt": "Confederation",
+   "tech": 4,
+   "sprite": 11,
+   "landing": {
+    "corridorHalfWidthDeg": 0.532,
+    "atmosScale": 1.1,
+    "gravityScale": 1.05,
+    "padBonus": 8000
+   },
+   "source": "base"
+  },
+  "155": {
+   "name": "Antares Station",
+   "system": 139,
+   "govt": "Confederation",
+   "tech": 0,
+   "sprite": 12,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 0.8,
+    "gravityScale": 0.95,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "156": {
+   "name": "New Istanbul",
+   "system": 155,
+   "govt": "Consolidated Express",
+   "tech": 5,
+   "sprite": 13,
+   "landing": {
+    "corridorHalfWidthDeg": 0.52,
+    "atmosScale": 1.0,
+    "gravityScale": 0.85,
+    "padBonus": 10000
+   },
+   "source": "conex-override"
+  },
+  "157": {
+   "name": "George's World",
+   "system": 200,
+   "govt": "Unexplored",
+   "tech": 0,
+   "sprite": 14,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.2,
+    "gravityScale": 1.15,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "158": {
+   "name": "P-8457",
+   "system": 202,
+   "govt": "Unexplored",
+   "tech": 0,
+   "sprite": 15,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 0.9,
+    "gravityScale": 1.05,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "159": {
+   "name": "Beeblebrox",
+   "system": 168,
+   "govt": "Rebellion",
+   "tech": 0,
+   "sprite": 16,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.1,
+    "gravityScale": 0.95,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "160": {
+   "name": "Turin V",
+   "system": 169,
+   "govt": "Consolidated Express",
+   "tech": 2,
+   "sprite": 17,
+   "landing": {
+    "corridorHalfWidthDeg": 0.556,
+    "atmosScale": 0.8,
+    "gravityScale": 0.85,
+    "padBonus": 4000
+   },
+   "source": "conex-override"
+  },
+  "161": {
+   "name": "Palshife",
+   "system": 196,
+   "govt": "Rebellion",
+   "tech": 3,
+   "sprite": 18,
+   "landing": {
+    "corridorHalfWidthDeg": 0.544,
+    "atmosScale": 1.0,
+    "gravityScale": 1.15,
+    "padBonus": 6000
+   },
+   "source": "base"
+  },
+  "162": {
+   "name": "Alkaid",
+   "system": 177,
+   "govt": "",
+   "tech": 0,
+   "sprite": 1,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.2,
+    "gravityScale": 1.05,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "163": {
+   "name": "Alkaidion",
+   "system": 177,
+   "govt": "Rebellion",
+   "tech": 3,
+   "sprite": 2,
+   "landing": {
+    "corridorHalfWidthDeg": 0.544,
+    "atmosScale": 0.9,
+    "gravityScale": 0.95,
+    "padBonus": 6000
+   },
+   "source": "base"
+  },
+  "164": {
+   "name": "Regulus II",
+   "system": 143,
+   "govt": "",
+   "tech": 0,
+   "sprite": 3,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.1,
+    "gravityScale": 0.85,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "165": {
+   "name": "Zaxted Starport",
+   "system": 150,
+   "govt": "",
+   "tech": 4,
+   "sprite": 4,
+   "landing": {
+    "corridorHalfWidthDeg": 0.532,
+    "atmosScale": 0.8,
+    "gravityScale": 1.15,
+    "padBonus": 8000
+   },
+   "source": "base"
+  },
+  "166": {
+   "name": "Zaxted",
+   "system": 150,
+   "govt": "",
+   "tech": 0,
+   "sprite": 5,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.0,
+    "gravityScale": 1.05,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "167": {
+   "name": "Clotho Prime",
+   "system": 192,
+   "govt": "Rebellion",
+   "tech": 3,
+   "sprite": 6,
+   "landing": {
+    "corridorHalfWidthDeg": 0.544,
+    "atmosScale": 1.2,
+    "gravityScale": 0.95,
+    "padBonus": 6000
+   },
+   "source": "base"
+  },
+  "168": {
+   "name": "Clotho II",
+   "system": 192,
+   "govt": "Rebellion",
+   "tech": 0,
+   "sprite": 7,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 0.9,
+    "gravityScale": 0.85,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "169": {
+   "name": "Orion",
+   "system": 188,
+   "govt": "Rebellion",
+   "tech": 0,
+   "sprite": 8,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.1,
+    "gravityScale": 1.15,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "170": {
+   "name": "Hunter",
+   "system": 188,
+   "govt": "Rebellion",
+   "tech": 0,
+   "sprite": 9,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 0.8,
+    "gravityScale": 1.05,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "171": {
+   "name": "Atropos",
+   "system": 191,
+   "govt": "Rebellion",
+   "tech": 2,
+   "sprite": 10,
+   "landing": {
+    "corridorHalfWidthDeg": 0.556,
+    "atmosScale": 1.0,
+    "gravityScale": 0.95,
+    "padBonus": 4000
+   },
+   "source": "base"
+  },
+  "172": {
+   "name": "Propus VII",
+   "system": 153,
+   "govt": "",
+   "tech": 0,
+   "sprite": 11,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.2,
+    "gravityScale": 0.85,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "173": {
+   "name": "New Scotland",
+   "system": 153,
+   "govt": "",
+   "tech": 2,
+   "sprite": 12,
+   "landing": {
+    "corridorHalfWidthDeg": 0.556,
+    "atmosScale": 0.9,
+    "gravityScale": 1.15,
+    "padBonus": 4000
+   },
+   "source": "base"
+  },
+  "174": {
+   "name": "New Ireland",
+   "system": 153,
+   "govt": "",
+   "tech": 2,
+   "sprite": 13,
+   "landing": {
+    "corridorHalfWidthDeg": 0.556,
+    "atmosScale": 1.1,
+    "gravityScale": 1.05,
+    "padBonus": 4000
+   },
+   "source": "base"
+  },
+  "175": {
+   "name": "New France",
+   "system": 143,
+   "govt": "Confederation",
+   "tech": 2,
+   "sprite": 14,
+   "landing": {
+    "corridorHalfWidthDeg": 0.556,
+    "atmosScale": 0.8,
+    "gravityScale": 0.95,
+    "padBonus": 4000
+   },
+   "source": "base"
+  },
+  "176": {
+   "name": "Diphidia II",
+   "system": 149,
+   "govt": "",
+   "tech": 1,
+   "sprite": 15,
+   "landing": {
+    "corridorHalfWidthDeg": 0.568,
+    "atmosScale": 1.0,
+    "gravityScale": 0.85,
+    "padBonus": 2000
+   },
+   "source": "base"
+  },
+  "177": {
+   "name": "New Columbia",
+   "system": 131,
+   "govt": "Confederation",
+   "tech": 0,
+   "sprite": 16,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.2,
+    "gravityScale": 1.15,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "178": {
+   "name": "Quake",
+   "system": 152,
+   "govt": "",
+   "tech": 0,
+   "sprite": 17,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 0.9,
+    "gravityScale": 1.05,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "179": {
+   "name": "Armstrong",
+   "system": 189,
+   "govt": "Consolidated Express",
+   "tech": 4,
+   "sprite": 18,
+   "landing": {
+    "corridorHalfWidthDeg": 0.532,
+    "atmosScale": 1.1,
+    "gravityScale": 0.95,
+    "padBonus": 8000
+   },
+   "source": "conex-override"
+  },
+  "180": {
+   "name": "Persephone IX",
+   "system": 187,
+   "govt": "",
+   "tech": 0,
+   "sprite": 1,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 0.8,
+    "gravityScale": 0.85,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "181": {
+   "name": "Rupert",
+   "system": 187,
+   "govt": "Rebellion",
+   "tech": 0,
+   "sprite": 2,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.0,
+    "gravityScale": 1.15,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "182": {
+   "name": "Darven",
+   "system": 167,
+   "govt": "",
+   "tech": 0,
+   "sprite": 3,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.2,
+    "gravityScale": 1.05,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "183": {
+   "name": "Blackthorne",
+   "system": 167,
+   "govt": "",
+   "tech": 3,
+   "sprite": 4,
+   "landing": {
+    "corridorHalfWidthDeg": 0.544,
+    "atmosScale": 0.9,
+    "gravityScale": 0.95,
+    "padBonus": 6000
+   },
+   "source": "base"
+  },
+  "184": {
+   "name": "Pollux VI",
+   "system": 140,
+   "govt": "",
+   "tech": 0,
+   "sprite": 5,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.1,
+    "gravityScale": 0.85,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "185": {
+   "name": "New Japan",
+   "system": 140,
+   "govt": "Confederation",
+   "tech": 3,
+   "sprite": 6,
+   "landing": {
+    "corridorHalfWidthDeg": 0.544,
+    "atmosScale": 0.8,
+    "gravityScale": 1.15,
+    "padBonus": 6000
+   },
+   "source": "base"
+  },
+  "186": {
+   "name": "Thanos IV",
+   "system": 166,
+   "govt": "",
+   "tech": 0,
+   "sprite": 7,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.0,
+    "gravityScale": 1.05,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "187": {
+   "name": "Syntex Refinery",
+   "system": 166,
+   "govt": "Rebellion",
+   "tech": 0,
+   "sprite": 8,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.2,
+    "gravityScale": 0.95,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "188": {
+   "name": "Ursa Minor Beta",
+   "system": 159,
+   "govt": "Rebellion",
+   "tech": 0,
+   "sprite": 9,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 0.9,
+    "gravityScale": 0.85,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "189": {
+   "name": "Perseus II",
+   "system": 185,
+   "govt": "",
+   "tech": 0,
+   "sprite": 10,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.1,
+    "gravityScale": 1.15,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "190": {
+   "name": "Pegasus",
+   "system": 185,
+   "govt": "",
+   "tech": 2,
+   "sprite": 11,
+   "landing": {
+    "corridorHalfWidthDeg": 0.556,
+    "atmosScale": 0.8,
+    "gravityScale": 1.05,
+    "padBonus": 4000
+   },
+   "source": "base"
+  },
+  "191": {
+   "name": "Sauron",
+   "system": 160,
+   "govt": "",
+   "tech": 3,
+   "sprite": 12,
+   "landing": {
+    "corridorHalfWidthDeg": 0.544,
+    "atmosScale": 1.0,
+    "gravityScale": 0.95,
+    "padBonus": 6000
+   },
+   "source": "base"
+  },
+  "192": {
+   "name": "Darkstar",
+   "system": 157,
+   "govt": "Rebellion",
+   "tech": 3,
+   "sprite": 13,
+   "landing": {
+    "corridorHalfWidthDeg": 0.544,
+    "atmosScale": 1.2,
+    "gravityScale": 0.85,
+    "padBonus": 6000
+   },
+   "source": "base"
+  },
+  "193": {
+   "name": "New Bavaria",
+   "system": 163,
+   "govt": "",
+   "tech": 3,
+   "sprite": 14,
+   "landing": {
+    "corridorHalfWidthDeg": 0.544,
+    "atmosScale": 0.9,
+    "gravityScale": 1.15,
+    "padBonus": 6000
+   },
+   "source": "base"
+  },
+  "194": {
+   "name": "Palomino",
+   "system": 178,
+   "govt": "Rebellion",
+   "tech": 0,
+   "sprite": 15,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.1,
+    "gravityScale": 1.05,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "195": {
+   "name": "Tiber II",
+   "system": 171,
+   "govt": "",
+   "tech": 0,
+   "sprite": 16,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 0.8,
+    "gravityScale": 0.95,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "196": {
+   "name": "Port Oread",
+   "system": 171,
+   "govt": "Rebellion",
+   "tech": 3,
+   "sprite": 17,
+   "landing": {
+    "corridorHalfWidthDeg": 0.544,
+    "atmosScale": 1.0,
+    "gravityScale": 0.85,
+    "padBonus": 6000
+   },
+   "source": "base"
+  },
+  "197": {
+   "name": "Akio",
+   "system": 182,
+   "govt": "Rebellion",
+   "tech": 5,
+   "sprite": 18,
+   "landing": {
+    "corridorHalfWidthDeg": 0.52,
+    "atmosScale": 1.2,
+    "gravityScale": 1.15,
+    "padBonus": 10000
+   },
+   "source": "base"
+  },
+  "198": {
+   "name": "Lauralee",
+   "system": 183,
+   "govt": "Rebellion",
+   "tech": 0,
+   "sprite": 1,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 0.9,
+    "gravityScale": 1.05,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "199": {
+   "name": "Murphy's World",
+   "system": 173,
+   "govt": "Rebellion",
+   "tech": 3,
+   "sprite": 2,
+   "landing": {
+    "corridorHalfWidthDeg": 0.544,
+    "atmosScale": 1.1,
+    "gravityScale": 0.95,
+    "padBonus": 6000
+   },
+   "source": "base"
+  },
+  "200": {
+   "name": "Adhara",
+   "system": 175,
+   "govt": "Rebellion",
+   "tech": 0,
+   "sprite": 3,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 0.8,
+    "gravityScale": 0.85,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "201": {
+   "name": "Sentinel Station",
+   "system": 175,
+   "govt": "Rebellion",
+   "tech": 1,
+   "sprite": 4,
+   "landing": {
+    "corridorHalfWidthDeg": 0.568,
+    "atmosScale": 1.0,
+    "gravityScale": 1.15,
+    "padBonus": 2000
+   },
+   "source": "base"
+  },
+  "202": {
+   "name": "Zeus",
+   "system": 190,
+   "govt": "",
+   "tech": 0,
+   "sprite": 5,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.2,
+    "gravityScale": 1.05,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "203": {
+   "name": "Hera",
+   "system": 190,
+   "govt": "",
+   "tech": 0,
+   "sprite": 6,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 0.9,
+    "gravityScale": 0.95,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "204": {
+   "name": "Osiris II",
+   "system": 184,
+   "govt": "",
+   "tech": 0,
+   "sprite": 7,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.1,
+    "gravityScale": 0.85,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "205": {
+   "name": "Endor",
+   "system": 184,
+   "govt": "Rebellion",
+   "tech": 0,
+   "sprite": 8,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 0.8,
+    "gravityScale": 1.15,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "206": {
+   "name": "Topaz II",
+   "system": 195,
+   "govt": "",
+   "tech": 0,
+   "sprite": 9,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.0,
+    "gravityScale": 1.05,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "207": {
+   "name": "Emerald",
+   "system": 195,
+   "govt": "Rebellion",
+   "tech": 2,
+   "sprite": 10,
+   "landing": {
+    "corridorHalfWidthDeg": 0.556,
+    "atmosScale": 1.2,
+    "gravityScale": 0.95,
+    "padBonus": 4000
+   },
+   "source": "base"
+  },
+  "208": {
+   "name": "Virgo",
+   "system": 194,
+   "govt": "Rebellion",
+   "tech": 2,
+   "sprite": 11,
+   "landing": {
+    "corridorHalfWidthDeg": 0.556,
+    "atmosScale": 0.9,
+    "gravityScale": 0.85,
+    "padBonus": 4000
+   },
+   "source": "base"
+  },
+  "209": {
+   "name": "Sirgil III",
+   "system": 170,
+   "govt": "Rebellion",
+   "tech": 0,
+   "sprite": 12,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.1,
+    "gravityScale": 1.15,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "210": {
+   "name": "Sirgil Starport",
+   "system": 170,
+   "govt": "Rebellion",
+   "tech": 4,
+   "sprite": 13,
+   "landing": {
+    "corridorHalfWidthDeg": 0.532,
+    "atmosScale": 0.8,
+    "gravityScale": 1.05,
+    "padBonus": 8000
+   },
+   "source": "base"
+  },
+  "211": {
+   "name": "Scorpio",
+   "system": 186,
+   "govt": "Rebellion",
+   "tech": 0,
+   "sprite": 14,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.0,
+    "gravityScale": 0.95,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "212": {
+   "name": "Deneb III",
+   "system": 142,
+   "govt": "",
+   "tech": 1,
+   "sprite": 15,
+   "landing": {
+    "corridorHalfWidthDeg": 0.568,
+    "atmosScale": 1.2,
+    "gravityScale": 0.85,
+    "padBonus": 2000
+   },
+   "source": "base"
+  },
+  "213": {
+   "name": "New Cydonia",
+   "system": 158,
+   "govt": "Cydonian",
+   "tech": 3,
+   "sprite": 16,
+   "landing": {
+    "corridorHalfWidthDeg": 0.544,
+    "atmosScale": 0.9,
+    "gravityScale": 1.15,
+    "padBonus": 6000
+   },
+   "source": "base"
+  },
+  "214": {
+   "name": "Lethe Prime",
+   "system": 193,
+   "govt": "Lethean",
+   "tech": 3,
+   "sprite": 17,
+   "landing": {
+    "corridorHalfWidthDeg": 0.544,
+    "atmosScale": 1.1,
+    "gravityScale": 1.05,
+    "padBonus": 6000
+   },
+   "source": "base"
+  },
+  "215": {
+   "name": "Opal",
+   "system": 152,
+   "govt": "",
+   "tech": 2,
+   "sprite": 18,
+   "landing": {
+    "corridorHalfWidthDeg": 0.556,
+    "atmosScale": 0.8,
+    "gravityScale": 0.95,
+    "padBonus": 4000
+   },
+   "source": "base"
+  },
+  "216": {
+   "name": "Nexus Outpost",
+   "system": 235,
+   "govt": "",
+   "tech": 0,
+   "sprite": 1,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.0,
+    "gravityScale": 0.85,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "217": {
+   "name": "P-4812",
+   "system": 205,
+   "govt": "Unexplored",
+   "tech": 0,
+   "sprite": 2,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.2,
+    "gravityScale": 1.15,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "218": {
+   "name": "Pirate's Cove",
+   "system": 205,
+   "govt": "Pirates",
+   "tech": 3,
+   "sprite": 3,
+   "landing": {
+    "corridorHalfWidthDeg": 0.544,
+    "atmosScale": 0.9,
+    "gravityScale": 1.05,
+    "padBonus": 6000
+   },
+   "source": "base"
+  },
+  "219": {
+   "name": "Astrodyne Outpost",
+   "system": 206,
+   "govt": "",
+   "tech": 0,
+   "sprite": 4,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.1,
+    "gravityScale": 0.95,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "220": {
+   "name": "P-6564",
+   "system": 208,
+   "govt": "Unexplored",
+   "tech": 0,
+   "sprite": 5,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 0.8,
+    "gravityScale": 0.85,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "221": {
+   "name": "Ruby",
+   "system": 208,
+   "govt": "Confederation",
+   "tech": 3,
+   "sprite": 6,
+   "landing": {
+    "corridorHalfWidthDeg": 0.544,
+    "atmosScale": 1.0,
+    "gravityScale": 1.15,
+    "padBonus": 6000
+   },
+   "source": "base"
+  },
+  "222": {
+   "name": "Listening Post 94",
+   "system": 232,
+   "govt": "",
+   "tech": 0,
+   "sprite": 7,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.2,
+    "gravityScale": 1.05,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "223": {
+   "name": "Listening Post 95",
+   "system": 226,
+   "govt": "",
+   "tech": 0,
+   "sprite": 8,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 0.9,
+    "gravityScale": 0.95,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "224": {
+   "name": "P-1896",
+   "system": 229,
+   "govt": "Unexplored",
+   "tech": 0,
+   "sprite": 9,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.1,
+    "gravityScale": 0.85,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "225": {
+   "name": "Privateer's Haven",
+   "system": 229,
+   "govt": "Pirates",
+   "tech": 1,
+   "sprite": 10,
+   "landing": {
+    "corridorHalfWidthDeg": 0.568,
+    "atmosScale": 0.8,
+    "gravityScale": 1.15,
+    "padBonus": 2000
+   },
+   "source": "base"
+  },
+  "226": {
+   "name": "P-0805",
+   "system": 213,
+   "govt": "Unexplored",
+   "tech": 0,
+   "sprite": 11,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.0,
+    "gravityScale": 1.05,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "227": {
+   "name": "P-2143",
+   "system": 214,
+   "govt": "Unexplored",
+   "tech": 0,
+   "sprite": 12,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.2,
+    "gravityScale": 0.95,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "228": {
+   "name": "P-0595",
+   "system": 218,
+   "govt": "Unexplored",
+   "tech": 0,
+   "sprite": 13,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 0.9,
+    "gravityScale": 0.85,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "229": {
+   "name": "Evildrome",
+   "system": 218,
+   "govt": "Pirates",
+   "tech": 5,
+   "sprite": 14,
+   "landing": {
+    "corridorHalfWidthDeg": 0.52,
+    "atmosScale": 1.1,
+    "gravityScale": 1.15,
+    "padBonus": 10000
+   },
+   "source": "base"
+  },
+  "230": {
+   "name": "P-1249",
+   "system": 219,
+   "govt": "Unexplored",
+   "tech": 0,
+   "sprite": 15,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 0.8,
+    "gravityScale": 1.05,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "231": {
+   "name": "P-8724",
+   "system": 221,
+   "govt": "Unexplored",
+   "tech": 0,
+   "sprite": 16,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.0,
+    "gravityScale": 0.95,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "232": {
+   "name": "P-1027",
+   "system": 223,
+   "govt": "Unexplored",
+   "tech": 0,
+   "sprite": 17,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.2,
+    "gravityScale": 0.85,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "233": {
+   "name": "New Antigua",
+   "system": 223,
+   "govt": "Pirates",
+   "tech": 1,
+   "sprite": 18,
+   "landing": {
+    "corridorHalfWidthDeg": 0.568,
+    "atmosScale": 0.9,
+    "gravityScale": 1.15,
+    "padBonus": 2000
+   },
+   "source": "base"
+  },
+  "234": {
+   "name": "Liberty Station",
+   "system": 230,
+   "govt": "",
+   "tech": 0,
+   "sprite": 1,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 1.1,
+    "gravityScale": 1.05,
+    "padBonus": 0
+   },
+   "source": "base"
+  },
+  "235": {
+   "name": "Cenron",
+   "system": 236,
+   "govt": "Consolidated Express",
+   "tech": 0,
+   "sprite": 2,
+   "landing": {
+    "corridorHalfWidthDeg": 0.58,
+    "atmosScale": 0.8,
+    "gravityScale": 0.95,
+    "padBonus": 0
+   },
+   "source": "conex"
+  },
+  "238": {
+   "name": "Exeon",
+   "system": 236,
+   "govt": "Consolidated Express",
+   "tech": 25,
+   "sprite": 5,
+   "landing": {
+    "corridorHalfWidthDeg": 0.28,
+    "atmosScale": 0.9,
+    "gravityScale": 1.05,
+    "padBonus": 50000
+   },
+   "source": "conex"
+  }
+ }
+}

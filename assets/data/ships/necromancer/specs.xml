@@ -1,0 +1,9 @@
+<Ship>
+    <ShipName Value="Necromancer" />
+    <MaxVelocity Value="500" />
+    <TurnSpeed Value="220" />
+    <Acceleration Value="1100" />
+    <Mass Value="5000" />
+    <CollisionRadius Value="20" />
+    <Damage Value="10" />
+</Ship>

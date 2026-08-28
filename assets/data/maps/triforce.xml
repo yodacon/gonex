@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<scene>
+  <map width="10000" height="10000" />
+  <planets>
+    <planet xpos="1000" ypos="4500" sprite="1" team="1" name="Blah" />
+    <planet xpos="1500" ypos="4500" sprite="2" team="1" name="Blah" />
+    <planet xpos="1250" ypos="4750" sprite="3" team="1" name="Blah" />
+    <planet xpos="8000" ypos="1000" sprite="4" team="2" name="Blah" />
+    <planet xpos="8500" ypos="1000" sprite="5" team="2" name="Blah" />
+    <planet xpos="8250" ypos="1250" sprite="6" team="2" name="Blah" />
+    <planet xpos="8000" ypos="8000" sprite="7" team="3" name="Blah" />
+    <planet xpos="8500" ypos="8000" sprite="8" team="3" name="Blah" />
+    <planet xpos="8250" ypos="8250" sprite="9" team="3" name="Blah" />
+
+    <planet xpos="5000" ypos="5000" sprite="14" team="0" name="Blah" />
+    <planet xpos="3000" ypos="4000" sprite="15" team="0" name="Blah" />
+    <planet xpos="8000" ypos="4000" sprite="16" team="0" name="Blah" />
+    <planet xpos="3000" ypos="7000" sprite="17" team="0" name="Blah" />
+  </planets>
+  <spawns>
+    <spawn xpos="1000" ypos="4500" sprite="1" team="1" />
+    <spawn xpos="1500" ypos="4500" sprite="2" team="1" />
+    <spawn xpos="1250" ypos="4750" sprite="3" team="1" />
+    <spawn xpos="8000" ypos="1000" sprite="4" team="2" />
+    <spawn xpos="8500" ypos="1000" sprite="5" team="2" />
+    <spawn xpos="8250" ypos="1250" sprite="6" team="2" />
+    <spawn xpos="8000" ypos="8000" sprite="7" team="3" />
+    <spawn xpos="8500" ypos="8000" sprite="8" team="3" />
+    <spawn xpos="8250" ypos="8250" sprite="9" team="3" />
+  </spawns>
+</scene>

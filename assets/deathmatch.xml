@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<scene>
+  <map filename="data/maps/triforce.xml" />
+  <actors>
+    <actor xpos="1000" ypos="4500" shipid="1" team="1" name="Jimmy" />
+    <actor xpos="1000" ypos="4500" shipid="2" team="1" name="Jimmy" />
+    <actor xpos="1000" ypos="4500" shipid="3" team="1" name="Jimmy" />
+    <actor xpos="1000" ypos="4500" shipid="4" team="1" name="Jimmy" />
+    <actor xpos="1000" ypos="4500" shipid="5" team="1" name="Jimmy" />
+    <actor xpos="1000" ypos="4500" shipid="6" team="1" name="Jimmy" />
+    <actor xpos="1000" ypos="4500" shipid="7" team="1" name="Jimmy" />
+    <actor xpos="1000" ypos="4500" shipid="8" team="1" name="Jimmy" />
+    <actor xpos="1000" ypos="4500" shipid="9" team="1" name="Jimmy" />
+    <actor xpos="1000" ypos="4500" shipid="10" team="1" name="Jimmy" />
+    <actor xpos="1000" ypos="4500" shipid="11" team="1" name="Jimmy" />
+    <actor xpos="1000" ypos="4500" shipid="12" team="1" name="Jimmy" />
+
+    <actor xpos="8000" ypos="1000" shipid="1" team="2" name="Jimmy" />
+    <actor xpos="8000" ypos="1000" shipid="2" team="2" name="Jimmy" />
+    <actor xpos="8000" ypos="1000" shipid="3" team="2" name="Jimmy" />
+    <actor xpos="8000" ypos="1000" shipid="4" team="2" name="Jimmy" />
+    <actor xpos="8000" ypos="1000" shipid="5" team="2" name="Jimmy" />
+    <actor xpos="8000" ypos="1000" shipid="6" team="2" name="Jimmy" />
+    <actor xpos="8000" ypos="1000" shipid="7" team="2" name="Jimmy" />
+    <actor xpos="8000" ypos="1000" shipid="8" team="2" name="Jimmy" />
+    <actor xpos="8000" ypos="1000" shipid="9" team="2" name="Jimmy" />
+    <actor xpos="8000" ypos="1000" shipid="10" team="2" name="Jimmy" />
+    <actor xpos="8000" ypos="1000" shipid="11" team="2" name="Jimmy" />
+    <actor xpos="8000" ypos="1000" shipid="12" team="2" name="Jimmy" />
+
+    <actor xpos="8000" ypos="8000" shipid="1" team="3" name="Jimmy" />
+    <actor xpos="8000" ypos="8000" shipid="2" team="3" name="Jimmy" />
+    <actor xpos="8000" ypos="8000" shipid="3" team="3" name="Jimmy" />
+    <actor xpos="8000" ypos="8000" shipid="4" team="3" name="Jimmy" />
+    <actor xpos="8000" ypos="8000" shipid="5" team="3" name="Jimmy" />
+    <actor xpos="8000" ypos="8000" shipid="6" team="3" name="Jimmy" />
+    <actor xpos="8000" ypos="8000" shipid="7" team="3" name="Jimmy" />
+    <actor xpos="8000" ypos="8000" shipid="8" team="3" name="Jimmy" />
+    <actor xpos="8000" ypos="8000" shipid="9" team="3" name="Jimmy" />
+    <actor xpos="8000" ypos="8000" shipid="10" team="3" name="Jimmy" />
+    <actor xpos="8000" ypos="8000" shipid="11" team="3" name="Jimmy" />
+    <actor xpos="8000" ypos="8000" shipid="12" team="3" name="Jimmy" />
+  </actors>
+</scene>
