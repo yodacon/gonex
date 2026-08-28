@@ -39,6 +39,7 @@ type bowGeom struct {
 	standPx  float64 // shell standoff in px
 	roll     float64 // the steering command; the lobe sits opposite
 	alpha    float64 // overall brightness gate
+	t        float64 // clock for the turbulence wobble
 }
 
 // drawBowFire lays the fire grid along the standoff shell: row 0 burns ON
@@ -53,33 +54,45 @@ func drawBowFire(dst *ebiten.Image, f *fx.Fire, g bowGeom) {
 	rx0 := 40 + g.standPx*0.85
 	lobe := -g.roll
 	rollAbs := math.Abs(g.roll)
-	for i := 0; i < f.Cols; i++ {
-		u := f.U(i)
-		ang := u * 1.25
-		side := math.Sin(ang)
-		swell := 1 + 0.22*math.Max(0, lobe*side)*rollAbs
-		bx := g.cx + side*rx0*swell
-		by := g.nose - g.standPx*swell + (1-math.Cos(ang))*g.standPx*0.75
-		// the streamline this column rides: outward at the stagnation
-		// point, wrapping aft around the shoulders
-		dirX := side * (0.55 + 0.45*math.Abs(side))
-		dirY := -math.Cos(ang) * 0.9
-		for j := 0; j < f.Rows; j++ {
-			c := f.Cell(i, j)
-			if c < 0.04 {
-				continue
+	// two passes so the GPU sees two batches, not thousands: every glow
+	// splat shares one texture and blend state, then every solid core
+	// shares the other. Same math both times — recomputing a few hundred
+	// sines is far cheaper than breaking the batch per cell.
+	for pass := 0; pass < 2; pass++ {
+		for i := 0; i < f.Cols; i++ {
+			u := f.U(i)
+			ang := u * 1.25
+			side := math.Sin(ang)
+			swell := 1 + 0.22*math.Max(0, lobe*side)*rollAbs
+			bx := g.cx + side*rx0*swell
+			by := g.nose - g.standPx*swell + (1-math.Cos(ang))*g.standPx*0.75
+			// the streamline this column rides: outward at the stagnation
+			// point, wrapping aft around the shoulders
+			dirX := side * (0.55 + 0.45*math.Abs(side))
+			dirY := -math.Cos(ang) * 0.9
+			for j := 0; j < f.Rows; j++ {
+				c := f.Cell(i, j)
+				if c < 0.04 {
+					continue
+				}
+				v := float64(j)
+				// aft drag grows quadratically with depth, and a slow
+				// turbulence wobble rides the whole sheet — the tip of
+				// every column bends downstream and breathes
+				wob := math.Sin(g.t*6+u*7+v*0.9) * (0.6 + v*0.45)
+				px := bx + dirX*v*4.5 + side*v*v*0.4 + wob
+				py := by + dirY*v*5.0 + v*v*0.85 +
+					math.Cos(g.t*5+u*5)*0.9*v*0.3
+				r := float32(c*(4.6+v*0.7) + 1.1)
+				col := fireBand(c)
+				if pass == 0 {
+					glowDot(dst, float32(px), float32(py), r*2.8, col,
+						math.Min(c*0.55, 0.55)*g.alpha)
+				} else {
+					fastDot(dst, float32(px), float32(py), r, col,
+						math.Min(c*1.6, 1)*g.alpha)
+				}
 			}
-			v := float64(j)
-			// aft drag grows quadratically with depth: the tip of every
-			// column bends downstream — particle wave, not straight fire
-			px := bx + dirX*v*4.5 + side*v*v*0.4
-			py := by + dirY*v*5.0 + v*v*0.85
-			r := float32(c*(4.6+v*0.7) + 1.1)
-			col := fireBand(c)
-			glowDot(dst, float32(px), float32(py), r*2.8, col,
-				math.Min(c*0.55, 0.55)*g.alpha)
-			fastDot(dst, float32(px), float32(py), r, col,
-				math.Min(c*1.6, 1)*g.alpha)
 		}
 	}
 }
@@ -99,25 +112,30 @@ func drawMachCloud(dst *ebiten.Image, f *fx.Fire, cx, cy, mach, alpha float64) {
 	k := math.Min(math.Sqrt(m*m-1), 2.6) / 2.6
 	rw := 68.0
 	white := color.RGBA{236, 243, 250, 255}
-	for i := 0; i < f.Cols; i++ {
-		u := f.U(i)
-		bx := cx + u*rw
-		by := cy - 8 + math.Abs(u)*math.Abs(u)*14
-		dirX := u * 0.5
-		dirY := 0.42 + 0.75*math.Abs(u)*k
-		for j := 0; j < f.Rows; j++ {
-			c := f.Cell(i, j)
-			if c < 0.05 {
-				continue
+	// batched like the bow fire: all glow bodies, then all kernels
+	for pass := 0; pass < 2; pass++ {
+		for i := 0; i < f.Cols; i++ {
+			u := f.U(i)
+			bx := cx + u*rw
+			by := cy - 8 + math.Abs(u)*math.Abs(u)*14
+			dirX := u * 0.5
+			dirY := 0.42 + 0.75*math.Abs(u)*k
+			for j := 0; j < f.Rows; j++ {
+				c := f.Cell(i, j)
+				if c < 0.05 {
+					continue
+				}
+				v := float64(j)
+				px := bx + dirX*v*7 + u*v*v*0.5*k
+				py := by + dirY*v*6.5 + v*v*0.5
+				al := math.Min(c*1.1, 0.75) * alpha
+				r := float32(c*9 + v*1.1 + 2.5)
+				if pass == 0 {
+					glowDot(dst, float32(px), float32(py), r*2.3, white, al*0.5)
+				} else {
+					fastDot(dst, float32(px), float32(py), r, white, al)
+				}
 			}
-			v := float64(j)
-			px := bx + dirX*v*7 + u*v*v*0.5*k
-			py := by + dirY*v*6.5 + v*v*0.5
-			al := math.Min(c*1.1, 0.75) * alpha
-			r := float32(c*9 + v*1.1 + 2.5)
-			// a wide additive glow body under a brighter kernel: volume
-			glowDot(dst, float32(px), float32(py), r*2.3, white, al*0.5)
-			fastDot(dst, float32(px), float32(py), r, white, al)
 		}
 	}
 }

@@ -107,7 +107,7 @@ func (a *App) drawFxLab(screen *ebiten.Image) {
 	if l.showBow {
 		drawBowFire(screen, l.bow, bowGeom{
 			cx: cx, nose: nose, standPx: standPx,
-			roll: l.roll, alpha: 0.5 + 0.5*math.Min(l.qFrac*2, 1),
+			roll: l.roll, alpha: 0.5 + 0.5*math.Min(l.qFrac*2, 1), t: l.t,
 		})
 	}
 	shipImg := a.Catalog.Get(a.Cfg.PlayerShipID).Sprites[0]

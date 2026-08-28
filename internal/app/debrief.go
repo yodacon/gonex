@@ -8,6 +8,7 @@ package app
 import (
 	"fmt"
 	"image/color"
+	"math"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
@@ -130,15 +131,21 @@ func (a *App) drawDebrief(screen *ebiten.Image) {
 	score, grade, verdict := gradeEntry(s, e.boomFine)
 	lines := conduct(s, s.Veh, e.boomFine)
 
+	// the card fades in over the parked ship instead of popping — the
+	// rollout ends, a beat, then the ledger arrives
+	fade := math.Min(e.doneWait*2.2, 1)
+	ff := float32(fade)
+
 	w, h := 660.0, 224.0+float64(len(lines))*18
 	x, y := (ScreenW-w)/2, 120.0
 	vector.DrawFilledRect(screen, float32(x), float32(y), float32(w), float32(h),
-		color.RGBA{5, 7, 10, 242}, false)
-	vector.StrokeRect(screen, float32(x), float32(y), float32(w), float32(h), 1, colChrome, false)
+		premul(color.RGBA{5, 7, 10, 255}, 0.95*fade), false)
+	vector.StrokeRect(screen, float32(x), float32(y), float32(w), float32(h), 1,
+		premul(colChrome, fade), false)
 
-	ui.DrawText(screen, fmt.Sprintf("LANDING DEBRIEF — %s", stName), x+24, y+18, 1)
+	ui.DrawText(screen, fmt.Sprintf("LANDING DEBRIEF — %s", stName), x+24, y+18, ff)
 	vector.StrokeLine(screen, float32(x+24), float32(y+40), float32(x+w-24), float32(y+40),
-		1, premul(colRule, 0.9), false)
+		1, premul(colRule, 0.9*fade), false)
 
 	// the grade, big, on the right
 	gcol := colOI
@@ -148,13 +155,13 @@ func (a *App) drawDebrief(screen *ebiten.Image) {
 	if score < 40 {
 		gcol = colBad
 	}
-	ui.DrawTextScaled(screen, grade, x+w-120, y+56, 4, gcol, 1)
-	ui.DrawText(screen, fmt.Sprintf("%d/100", score), x+w-118, y+112, 0.8)
+	ui.DrawTextScaled(screen, grade, x+w-120, y+56, 4, gcol, ff)
+	ui.DrawText(screen, fmt.Sprintf("%d/100", score), x+w-118, y+112, 0.8*ff)
 
 	// the ledger: hull, credits, resources
 	ly := y + 56.0
 	row := func(f string, args ...any) {
-		ui.DrawText(screen, fmt.Sprintf(f, args...), x+24, ly, 0.9)
+		ui.DrawText(screen, fmt.Sprintf(f, args...), x+24, ly, 0.9*ff)
 		ly += 20
 	}
 	row("hull %.0f%%   computer %.0f%%   clamps %.0f%%",
@@ -162,21 +169,22 @@ func (a *App) drawDebrief(screen *ebiten.Image) {
 	row("repairs due %d cr   pad bonus %d cr", sc.RepairCost, sc.PadBonus)
 	row("lithium %.1f kg   rcs %.0f kg   fuel %d", s.Li, s.RCS, a.voy.Fuel)
 
-	// conduct
+	// conduct — the lines land one after another as the fade completes
 	ly += 10
-	ui.DrawText(screen, "CONDUCT", x+24, ly, 0.7)
+	ui.DrawText(screen, "CONDUCT", x+24, ly, 0.7*ff)
 	ly += 20
-	for _, ln := range lines {
+	for i, ln := range lines {
+		lf := float32(math.Min(math.Max(e.doneWait*3-float64(i)*0.25, 0), 1))
 		mark, mcol := "+", colOI
 		if !ln.good {
 			mark, mcol = "-", colBad
 		}
-		ui.DrawTextScaled(screen, mark, x+28, ly, 1, mcol, 1)
-		ui.DrawText(screen, ln.text, x+44, ly, 0.85)
+		ui.DrawTextScaled(screen, mark, x+28, ly, 1, mcol, lf)
+		ui.DrawText(screen, ln.text, x+44, ly, 0.85*lf)
 		ly += 18
 	}
 
 	ly += 12
-	ui.DrawText(screen, verdict, x+24, ly, 1)
-	ui.DrawText(screen, "press any key to dock", x+24, y+h-24, 0.6)
+	ui.DrawText(screen, verdict, x+24, ly, ff)
+	ui.DrawText(screen, "press any key to dock", x+24, y+h-24, 0.6*ff)
 }

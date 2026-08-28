@@ -177,7 +177,15 @@ type entryState struct {
 	lastHull float64
 	hullRate float64
 	pred     []reentry.PredPt
+	predCD   float64 // refresh timer — the full-descent Predict is not a per-frame job
 	fuelBurn float64
+
+	// condensation contrails off the shoulders (aero phase), and the
+	// touchdown dust the tires kick on the runway — both ride the same
+	// soft-splat pass as the smoke
+	contrail []smokeBlob
+	dust     []smokeBlob
+	dustDone bool
 }
 
 // The plasma ramp: the sheath read as layers, front to wake — blue at the
@@ -452,8 +460,13 @@ func (a *App) updateEntry() {
 		e.lastHull = s.Dmg.Hull
 		e.hullRate += (inst - e.hullRate) * math.Min(5*dt, 1)
 		// the whole remaining descent, not just the next minute: the
-		// dotted pipe runs from here to the landing goal
-		e.pred = s.Predict(420, 6)
+		// dotted pipe runs from here to the landing goal. Refreshed a
+		// few times a second, not per frame — the stick does not move
+		// faster than that, and the projection is honest either way.
+		if e.predCD -= dt; e.predCD <= 0 {
+			e.pred = s.Predict(420, 6)
+			e.predCD = 0.25
+		}
 
 		// the damage-control surge runs the plant hot: recovery burns
 		// jump fuel on top of the battery and the vented RCS
@@ -549,6 +562,20 @@ func (a *App) updateEntry() {
 				e.finalSpd = math.Max(e.finalSpd-0.16*fdt, 0.22) // the flare
 			}
 		default: // rollout on the spaceport road
+			if !e.dustDone {
+				// the tires meet the runway: one burst of pale dust
+				e.dustDone = true
+				for i := 0; i < 22; i++ {
+					e.dust = append(e.dust, smokeBlob{
+						x:    shipX + (a.voy.Rng.Float64()-0.5)*36,
+						y:    600,
+						vx:   (a.voy.Rng.Float64() - 0.5) * 340,
+						vy:   -20 - a.voy.Rng.Float64()*55,
+						r:    4 + a.voy.Rng.Float64()*9,
+						span: 1.0 + a.voy.Rng.Float64()*0.9,
+					})
+				}
+			}
 			e.finalSpd = math.Max(e.finalSpd-0.22*fdt, 0)
 			e.finalRun += e.finalSpd * fdt
 			e.finalH = 0.012
@@ -556,6 +583,20 @@ func (a *App) updateEntry() {
 				e.finalDone = true
 			}
 		}
+		// the dust settles in real time while the rollout plays
+		liveDust := e.dust[:0]
+		for _, d0 := range e.dust {
+			d0.life += dt
+			d0.r += 16 * dt
+			d0.vx *= 1 - math.Min(2.2*dt, 1)
+			d0.vy += 70 * dt
+			d0.x += d0.vx * dt
+			d0.y += d0.vy * dt
+			if d0.life < d0.span {
+				liveDust = append(liveDust, d0)
+			}
+		}
+		e.dust = liveDust
 		return
 	}
 
@@ -950,6 +991,36 @@ func (a *App) updatePlasma(c reentry.Controls) {
 		}
 	}
 	e.smoke = liveSmoke
+
+	// contrails: once the air is thick enough to grip, the shoulders
+	// pull two condensation ribbons that stream aft past the camera —
+	// the aero phase's signature the way the fire is the plasma phase's
+	if s.AeroAuth > 0.2 && s.V > 350 && len(e.contrail) < 320 {
+		sinb, cosb := math.Sin(e.bank*0.7), math.Cos(e.bank*0.7)
+		for _, side := range [2]float64{-1, 1} {
+			ax := (side*44*cosb - 18*sinb) * shipScale
+			ay := (side*44*sinb + 18*cosb) * shipScale
+			e.contrail = append(e.contrail, smokeBlob{
+				x: shipX + ax, y: float64(shipDrawY) + ay,
+				vx:   side*16 + (rng.Float64()-0.5)*8,
+				vy:   230 + rng.Float64()*60,
+				r:    2.2 + rng.Float64()*1.5,
+				span: 1.5 + rng.Float64()*0.9,
+			})
+		}
+	}
+	liveCt := e.contrail[:0]
+	for _, ct := range e.contrail {
+		ct.life += dt
+		ct.r += 7 * dt // condensation diffuses slower than soot
+		ct.vy += 60 * dt
+		ct.x += ct.vx * dt
+		ct.y += ct.vy * dt
+		if ct.life < ct.span && ct.y < gaugeTop+60 {
+			liveCt = append(liveCt, ct)
+		}
+	}
+	e.contrail = liveCt
 }
 
 func boolf(b bool) float64 {
@@ -995,6 +1066,11 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 		// runway keeps NOTHING — every gauge comes off and the debrief
 		// card closes the flight.
 		a.drawFinalApproach(screen)
+		for _, d0 := range e.dust {
+			f := 1 - d0.life/d0.span
+			softDot(screen, float32(d0.x), float32(d0.y), float32(d0.r),
+				color.RGBA{205, 198, 188, 255}, 0.35*f)
+		}
 		if !e.finalDone {
 			a.drawEntryDials(screen)
 		} else if s.Status() != reentry.Flying {
@@ -1210,16 +1286,35 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 	}
 
 	// --- the smoke first, behind the flames: absorptive soot blobs,
-	// diffusing and washing down-screen
+	// diffusing and washing down-screen — and the contrails right after,
+	// same texture, same blend, one batch for both
 	for _, sm := range e.smoke {
 		f := 1 - sm.life/sm.span
 		softDot(screen, float32(sm.x), float32(sm.y), float32(sm.r),
 			color.RGBA{46, 38, 40, 255}, 0.30*f)
 	}
+	for _, ct := range e.contrail {
+		f := 1 - ct.life/ct.span
+		softDot(screen, float32(ct.x), float32(ct.y), float32(ct.r),
+			color.RGBA{228, 236, 244, 255}, 0.26*f*s.AeroAuth)
+	}
 
 	// --- the plasma stream: color is position in the flow, not species —
 	// the ramp walks bow blue → shell yellow → shoulder blue → pink →
-	// white → wake red as each particle rides its field line aft
+	// white → wake red as each particle rides its field line aft.
+	// Rendered in two passes so the GPU gets two big batches instead of
+	// a pipeline flip per particle: all additive glow first, then all
+	// streaks and cores on the plain texel.
+	for _, p := range e.parts {
+		if !p.bounced {
+			continue
+		}
+		f := 1 - p.life/p.span
+		al := 0.75 * f * math.Min(p.life*6, 1)
+		r := float32((1.0 + 1.5*f) * p.scale)
+		glowDot(screen, float32(p.x), float32(p.y), r*3.2,
+			plasmaRamp(p.phase), al*0.4)
+	}
 	for _, p := range e.parts {
 		f := 1 - p.life/p.span
 		al := 0.75 * f * math.Min(p.life*6, 1)
@@ -1232,12 +1327,10 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 				float32(0.7+p.scale), plasmaRamp(p.phase), al*0.7)
 			continue
 		}
-		// ignited: a flame lick — an additive glow splat under a streak
-		// along the velocity with a hot core, so the deflected stream
-		// reads as incandescent gas, not confetti
+		// ignited: a flame lick — a streak along the velocity with a hot
+		// core over the glow pass above
 		r := float32((1.0 + 1.5*f) * p.scale)
 		col := plasmaRamp(p.phase)
-		glowDot(screen, float32(p.x), float32(p.y), r*3.2, col, al*0.4)
 		fastLine(screen,
 			float32(p.x-p.vx*0.045), float32(p.y-p.vy*0.045),
 			float32(p.x), float32(p.y), r*1.1, col, al*0.7)
@@ -1268,7 +1361,7 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 	// burning UNDER the mirror line — the sheath the ship pushes ahead
 	drawBowFire(screen, e.bowFire, bowGeom{
 		cx: shipX - e.bank*30, nose: nose, standPx: standPx,
-		roll: e.roll, alpha: 0.5 + 0.5*math.Min(qFrac*2, 1),
+		roll: e.roll, alpha: 0.5 + 0.5*math.Min(qFrac*2, 1), t: s.T,
 	})
 	prev = false
 	for i := 0; i <= 22; i++ {
@@ -1575,8 +1668,27 @@ func (a *App) drawSky(screen *ebiten.Image, hkm, hy, bank, pivotX, sun float64, 
 	const skyW, skyH = 1500, 640
 	if a.skyImg == nil {
 		a.skyImg = ebiten.NewImage(skyW, skyH)
+		a.skyKey = ^uint64(0)
 	}
 	img := a.skyImg
+	// the sky changes on the scale of kilometres and sun-phase, not
+	// frames: re-render the offscreen only when the quantized inputs
+	// move. Placement (hy, bank) is applied at draw time either way.
+	key := uint64(int(hkm*4))<<28 | uint64(int(sun*200))<<12 | uint64(len(neb))
+	if len(neb) > 0 {
+		key ^= uint64(int(neb[0].x)) << 44
+	}
+	if key == a.skyKey {
+		op := &ebiten.DrawImageOptions{}
+		op.Filter = ebiten.FilterLinear
+		op.GeoM.Scale(1, hy/skyH)
+		op.GeoM.Translate(-skyW/2, -hy)
+		op.GeoM.Rotate(bank)
+		op.GeoM.Translate(pivotX, hy)
+		screen.DrawImage(img, op)
+		return
+	}
+	a.skyKey = key
 	img.Clear()
 
 	// The dome stays BLACK through the whole corridor: at interface the

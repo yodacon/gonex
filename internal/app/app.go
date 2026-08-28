@@ -80,6 +80,7 @@ type App struct {
 
 	background *ebiten.Image
 	skyImg     *ebiten.Image // offscreen for the banked entry/takeoff sky
+	skyKey     uint64        // quantized inputs of the last sky render
 	started    time.Time
 	quitting   bool
 
