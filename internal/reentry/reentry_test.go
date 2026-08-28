@@ -130,7 +130,6 @@ func TestAutolandAcrossProfiles(t *testing.T) {
 	}
 }
 
-
 // The in-game step is dt=0.1 (60 fps at 6x time): the flight computer must
 // fly the checkride cleanly at that rate too, across seeds.
 func TestAutolandNominalAtGameRate(t *testing.T) {

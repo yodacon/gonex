@@ -5,15 +5,15 @@ import "math"
 // Physical constants and model correlations, straight from the envelope
 // model. None of this is validated design data; all of it is a game.
 const (
-	g0     = 9.80665
-	earthR = 6371000.0
+	g0      = 9.80665
+	earthR  = 6371000.0
 	earthMu = 3.986004418e14
 
-	kBoltz  = 1.380649e-23
-	keV     = 8.617333262e-5 // Boltzmann in eV/K
-	qe      = 1.602176634e-19
-	me      = 9.1093837015e-31
-	mu0     = 4 * math.Pi * 1e-7
+	kBoltz = 1.380649e-23
+	keV    = 8.617333262e-5 // Boltzmann in eV/K
+	qe     = 1.602176634e-19
+	me     = 9.1093837015e-31
+	mu0    = 4 * math.Pi * 1e-7
 
 	kSuttonGraves = 1.7415e-4
 	sahaPre       = 2.4146e21

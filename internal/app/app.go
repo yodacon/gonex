@@ -17,10 +17,10 @@ import (
 
 	"yodacon.org/gonex/assets"
 	"yodacon.org/gonex/internal/camera"
-	"yodacon.org/gonex/internal/gmath"
 	"yodacon.org/gonex/internal/config"
 	"yodacon.org/gonex/internal/console"
 	"yodacon.org/gonex/internal/galaxy"
+	"yodacon.org/gonex/internal/gmath"
 	"yodacon.org/gonex/internal/mission"
 	"yodacon.org/gonex/internal/render"
 	"yodacon.org/gonex/internal/save"
@@ -71,12 +71,14 @@ type App struct {
 	deorbit *deorbitState
 	warp    *warpState
 	docking *dockingRequest
+	takeoff *takeoffState
 
 	// the engineering layer: one power grid under every mode
 	engPreset engPreset
 	engNoteCD float64
 
 	background *ebiten.Image
+	skyImg     *ebiten.Image // offscreen for the banked entry/takeoff sky
 	started    time.Time
 	quitting   bool
 
@@ -91,6 +93,9 @@ type App struct {
 	demoStellar int // GONEX_BOOT "demo <spob>": a scripted full landing
 	demoT       float64
 	demoHold    float64
+
+	deadT     float64 // seconds on the DED screen
+	deadPlace string  // where the ship was lost
 }
 
 func New() (*App, error) {
@@ -134,7 +139,10 @@ func New() (*App, error) {
 
 	// GONEX_BOOT skips the menus for development: "flight" starts a game,
 	// "entry <stellar>" starts a game and drops straight onto the corridor.
-	if boot := os.Getenv("GONEX_BOOT"); boot != "" {
+	if boot := os.Getenv("GONEX_BOOT"); boot == "load" {
+		a.loadGame() // straight into the last berth save
+		a.hideMenu()
+	} else if boot != "" {
 		a.newGame("sundaydrive.xml")
 		if id := 0; a.running() {
 			if _, err := fmt.Sscanf(boot, "entry %d", &id); err == nil && id > 0 {
@@ -160,6 +168,8 @@ func New() (*App, error) {
 			} else if _, err := fmt.Sscanf(boot, "dock %d", &id); err == nil && id > 0 {
 				a.dock = &dockState{stellar: id}
 				a.mode = modeLanded
+			} else if _, err := fmt.Sscanf(boot, "takeoff %d", &id); err == nil && id > 0 {
+				a.startTakeoff(id)
 			} else if _, err := fmt.Sscanf(boot, "route %d", &id); err == nil && id > 0 {
 				a.voy.Route = a.gal.Route(a.voy.System, id)
 			} else if _, err := fmt.Sscanf(boot, "warp %d", &id); err == nil && id > 0 {
@@ -216,7 +226,7 @@ func (a *App) newGame(scenePath string) {
 func (a *App) endGame() {
 	a.World = nil
 	a.voy, a.entry, a.dock, a.deorbit = nil, nil, nil, nil
-	a.warp, a.docking = nil, nil
+	a.warp, a.docking, a.takeoff = nil, nil, nil
 	a.mode = modeFlight
 	a.setGameStatus(false)
 }
@@ -226,7 +236,15 @@ func (a *App) saveGame() {
 		a.Console.Printf("- No game to save...")
 		return
 	}
-	if err := save.Write(a.World, save.DefaultPath); err != nil {
+	dockStellar := 0
+	if a.mode == modeLanded && a.dock != nil {
+		dockStellar = a.dock.stellar
+	}
+	var pilot *save.PilotState
+	if a.voy != nil {
+		pilot = a.voy.pilotState(a.Cfg.PlayerShipID, dockStellar)
+	}
+	if err := save.Write(a.World, pilot, save.DefaultPath); err != nil {
 		a.Console.Printf("- Save failed: %v", err)
 		return
 	}
@@ -238,12 +256,30 @@ func (a *App) loadGame() {
 	w := world.New(a.Catalog, time.Now().UnixNano())
 	w.Notify = a.Console.Notifyf
 	w.GodMode = a.Cfg.GodMode
-	if err := save.Read(w, save.DefaultPath); err != nil {
+	pilot, err := save.Read(w, save.DefaultPath)
+	if err != nil {
 		a.Console.Printf("- Load failed: %v", err)
 		return
 	}
 	a.World = w
+	a.entry, a.deorbit, a.warp, a.docking, a.takeoff = nil, nil, nil, nil, nil
+	if pilot != nil {
+		a.Cfg.PlayerShipID = pilot.PlayerShipID
+		a.voy = voyageFrom(pilot, time.Now().UnixNano())
+	} else {
+		a.voy = newVoyage(time.Now().UnixNano())
+	}
+	a.wireGrid()
+	a.enterSystem(a.voy.System)
 	a.setGameStatus(true)
+	if pilot != nil && pilot.DockStellar > 0 {
+		a.dock = &dockState{stellar: pilot.DockStellar}
+		a.mode = modeLanded
+		a.miniMapWin.Visible, a.hudWin.Visible, a.targetWin.Visible = false, false, false
+	} else {
+		a.dock = nil
+		a.mode = modeFlight
+	}
 	a.Console.Printf("- Game loaded...")
 }
 
@@ -292,6 +328,11 @@ func (a *App) Update() error {
 			if a.Console.State == console.Hidden {
 				a.updateDock()
 			}
+		case modeDead:
+			a.updateDead()
+		case modeTakeoff:
+			a.updateTakeoff()
+			a.updateFlightGrid() // climbing out: the plant is already banking
 		default:
 			if a.Console.State == console.Hidden {
 				a.handlePlayerInput()
@@ -324,6 +365,12 @@ func (a *App) Draw(screen *ebiten.Image) {
 		a.drawEntry(screen)
 	case a.running() && a.mode == modeLanded && a.dock != nil:
 		a.drawDock(screen)
+	case a.running() && a.mode == modeDead:
+		a.drawDead(screen)
+	case a.running() && a.mode == modeTakeoff && a.takeoff != nil:
+		screen.Fill(color.RGBA{2, 4, 8, 255})
+		a.stars.Draw(screen)
+		a.drawTakeoff(screen)
 	case a.running():
 		screen.Fill(color.RGBA{0, 0, 0, 255})
 		a.stars.Draw(screen)

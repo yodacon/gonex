@@ -23,3 +23,14 @@ func DrawText(dst *ebiten.Image, s string, x, y float64, alpha float32) {
 	op.ColorScale.ScaleAlpha(alpha)
 	text.Draw(dst, s, face, op)
 }
+
+// DrawTextScaled draws a line scaled up from the bitmap face — title cards
+// and the death screen, where 7x13 is not loud enough.
+func DrawTextScaled(dst *ebiten.Image, s string, x, y, scale float64, c color.Color, alpha float32) {
+	op := &text.DrawOptions{}
+	op.GeoM.Scale(scale, scale)
+	op.GeoM.Translate(x, y)
+	op.ColorScale.ScaleWithColor(c)
+	op.ColorScale.ScaleAlpha(alpha)
+	text.Draw(dst, s, face, op)
+}

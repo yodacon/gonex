@@ -128,8 +128,8 @@ func (a *App) registerCommands() {
 		v := a.voy
 		sys := a.gal.Systems[v.System]
 		c.Printf("- Day %d in %s (%s)", v.Day, sys.Name, sys.Govt)
-		c.Printf("- Credits %d  Fuel %d/%d  Lithium %0.1f kg  Lumber %d t",
-			v.Credits, v.Fuel, v.FuelMax, v.Lithium, v.Lumber)
+		c.Printf("- Credits %d  Fuel %d/%d  Lithium %0.1f kg  Cargo %d t",
+			v.Credits, v.Fuel, v.FuelMax, v.Lithium, v.CargoTotal())
 		c.Printf("- Hull %0.0f%%  Computer %0.0f%%  Clamps %0.0f%%",
 			100-v.Dmg.Hull, 100-v.Dmg.Computer, 100-v.Dmg.Clamps)
 		for _, act := range v.Active {

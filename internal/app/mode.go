@@ -23,6 +23,8 @@ const (
 	modeDeorbit
 	modeEntry
 	modeLanded
+	modeDead
+	modeTakeoff
 )
 
 func (m appMode) String() string {
@@ -35,6 +37,10 @@ func (m appMode) String() string {
 		return "ENTRY"
 	case modeLanded:
 		return "DOCKED"
+	case modeDead:
+		return "DED"
+	case modeTakeoff:
+		return "ASCENT"
 	}
 	return "FLIGHT"
 }
@@ -189,7 +195,6 @@ func (a *App) drainNotices() {
 	}
 	a.voy.Notices = nil
 }
-
 
 // updateDemo is the scripted pilot behind GONEX_BOOT "demo <spob>": it
 // flies the real docking handshake, and the entry/dock code advances it

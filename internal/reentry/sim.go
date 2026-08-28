@@ -12,11 +12,13 @@ type Vehicle struct {
 	Mass       float64 // kg
 	Diameter   float64 // m
 	NoseRadius float64 // m
-	LDMax      float64 // maximum commandable lift-to-drag
+	LDMax      float64 // maximum commandable lift-to-drag, plasma phase
+	GlideLD    float64 // wing-shape coefficient: the aero-phase glide ratio
 	TPSLimit   float64 // W/m2 before damage accrues
 	GLimit     float64 // structural deceleration limit
 	CoilField  float64 // B0 at the nose, T
 	LiTank     float64 // kg of lithium aboard at interface
+	RCSTank    float64 // kg of attitude propellant at interface
 	PowerCap   float64 // W the ship can supply to the shield
 }
 
@@ -27,7 +29,9 @@ type Vehicle struct {
 func Yodacon() Vehicle {
 	return Vehicle{
 		Mass: 350e3, Diameter: 40, NoseRadius: 12, LDMax: 0.35,
-		TPSLimit: 60e4, GLimit: 6, CoilField: 1.2, LiTank: 60, PowerCap: 4e6,
+		GlideLD:  1.0, // five by five: the wing shape glides 5:5
+		TPSLimit: 60e4, GLimit: 6, CoilField: 1.2, LiTank: 60,
+		RCSTank: 80, PowerCap: 4e6,
 	}
 }
 
@@ -83,8 +87,9 @@ type Sim struct {
 	V, Gamma, H, Downrange, T float64
 	Crossrange                float64 // km off the pad line, + right
 
-	// resources
-	Li         float64 // kg remaining
+	// resources — everything consumable depletes
+	Li         float64 // kg of lithium seed remaining
+	RCS        float64 // kg of attitude propellant remaining
 	BoostLeft  int
 	boostTimer float64
 	burstTimer float64
@@ -101,10 +106,24 @@ type Sim struct {
 
 	// last evaluated point, for gauges
 	FeedUsed float64 // kg/s actually injected this frame
-	Pt      Point
-	RefG    float64 // reference gamma this frame, deg
-	Width   float64 // corridor half-width this frame, deg
-	PadDist float64 // km of downrange remaining to the pad
+	Pt       Point
+	RefG     float64 // reference gamma this frame, deg
+	Width    float64 // corridor half-width this frame, deg
+	PadDist  float64 // km of downrange remaining to the pad
+
+	// steering authority split, 0..1 each — the handoff the HUD narrates.
+	// PlasmaAuth is the MHD cone's grip (dies as the sheath cools and the
+	// coil browns out); AeroAuth is dumb air on control surfaces (grows as
+	// the air thickens and the speed falls off hypersonic).
+	PlasmaAuth float64
+	AeroAuth   float64
+
+	// corridor discipline: OffCorridor is how far outside the pipe the
+	// needle is, 0 inside → 1 a full band out; the airframe heats and
+	// wears while it is nonzero. GuardianOn reports the protective system
+	// dumping lithium feed to save the hull.
+	OffCorridor float64
+	GuardianOn  bool
 
 	auto autoland
 	rng  *rand.Rand
@@ -115,10 +134,16 @@ type Sim struct {
 // atmosphere is trying to throw the ship back out and the pilot must hold
 // it down; the balance flips once drag bleeds the speed off.
 func New(veh Vehicle, prof Profile, seed int64) *Sim {
+	if veh.GlideLD == 0 {
+		veh.GlideLD = veh.LDMax
+	}
+	if veh.RCSTank == 0 {
+		veh.RCSTank = 80
+	}
 	s := &Sim{
 		Veh: veh, Prof: prof,
 		H: 122000, V: 8350 * math.Sqrt(prof.GravityScale),
-		Li: veh.LiTank, BoostLeft: 2, Supply: 1,
+		Li: veh.LiTank, RCS: veh.RCSTank, BoostLeft: 2, Supply: 1,
 		Crossrange: 8, // you never arrive lined up
 		rng:        rand.New(rand.NewSource(seed)),
 	}
@@ -162,6 +187,9 @@ func (s *Sim) GammaError() float64 { return s.Gamma*180/math.Pi - s.RefG }
 
 func (s *Sim) Status() Status { return s.status }
 
+// Boosting reports whether the coil overdrive is currently firing.
+func (s *Sim) Boosting() bool { return s.boostTimer > 0 }
+
 // Step advances the entry by dt seconds under the given controls.
 func (s *Sim) Step(dt float64, c Controls) {
 	if s.status != Flying {
@@ -179,6 +207,17 @@ func (s *Sim) Step(dt float64, c Controls) {
 	if s.burstTimer > 0 {
 		s.burstTimer -= dt
 		feed = maxFeed * 2.5
+	}
+	// the guardian: drifting toward the corridor's edge with the sheath
+	// hot, the flight computer overrides and dumps seed to save the hull.
+	// Protection is not free — it is paid straight out of the reserves.
+	s.GuardianOn = false
+	if math.Abs(s.GammaError()) > 0.75*s.Width &&
+		s.Pt.QShielded > 0.3*s.Veh.TPSLimit && s.Li > 0 {
+		s.GuardianOn = true
+		if feed < maxFeed {
+			feed = maxFeed
+		}
 	}
 	if feed*dt > s.Li {
 		feed = s.Li / dt
@@ -206,15 +245,43 @@ func (s *Sim) Step(dt float64, c Controls) {
 		authority *= 0.5
 	}
 	authority *= 0.35 + 0.65*math.Min(math.Max(s.Supply, 0), 1)
+	s.PlasmaAuth = authority
 
-	// commanded lift: pitch flies the needle, roll spends some of it sideways
+	// aero authority: once the plasma lets go the ship is an 350 t lifting
+	// body — control surfaces need thick air and sub-hypersonic speed.
+	rhoNow, _ := Atm(s.H, s.Prof.AtmosScale)
+	qd := 0.5 * rhoNow * s.V * s.V
+	s.AeroAuth = math.Min(qd/4000, 1) *
+		math.Min(math.Max((3200-s.V)/2400, 0), 1)
+
+	// commanded lift: pitch flies the needle, roll spends some of it
+	// sideways. Whichever medium grips harder carries the command.
 	pitch := math.Min(math.Max(c.Pitch, -1), 1)
 	roll := math.Min(math.Max(c.Roll, -1), 1)
-	ld := pitch * s.Veh.LDMax * (0.55 + 0.45*authority)
+
+	// RCS: every commanded degree costs propellant, triple when diving
+	// steep against thick air. An empty tank is a mushy stick — come in
+	// steep and the bottles are critical by the flare.
+	spend := (0.55*math.Abs(pitch) + 0.45*math.Abs(roll)) *
+		(0.5 + math.Min(qd/9000, 2.5)) * 0.12 *
+		(0.3 + 0.7*math.Min(s.V/3000, 1)) // aero trim takes over low and slow
+	if s.GammaError() < -s.Width {
+		spend *= 2.2
+	}
+	s.RCS = math.Max(s.RCS-spend*dt, 0)
+	rcsAuth := 0.35 + 0.65*math.Min(s.RCS/8, 1) // the last kilos fade
+
+	// the wing-shape coefficient: as the airframe takes over, the
+	// commandable L/D opens up from the cone's 0.35 to the glide ratio
+	grip := math.Max(authority, 0.9*s.AeroAuth)
+	ldMax := s.Veh.LDMax + (s.Veh.GlideLD-s.Veh.LDMax)*math.Min(s.AeroAuth*1.2, 1)
+	ld := pitch * ldMax * (0.55 + 0.45*grip) * rcsAuth
 	ldVert := ld * (1 - 0.4*math.Abs(roll))
 
-	// crossrange walk, strongest where the plasma grips
-	s.Crossrange += -roll * 6.5 * authority * dt * (s.V / 7800)
+	// crossrange walk: the cone steers where the plasma grips, the airframe
+	// steers where the air does — both through the thrusters' authority
+	s.Crossrange += -roll * dt * rcsAuth *
+		(6.5*authority*(s.V/7800) + 4.5*s.AeroAuth)
 
 	// 3-DOF planar dynamics, RK4
 	sArea := math.Pi * s.Veh.Diameter * s.Veh.Diameter / 4
@@ -263,6 +330,22 @@ func (s *Sim) accrueDamage(dt float64) {
 	if over := s.Pt.QShielded/s.Veh.TPSLimit - 1; over > 0 {
 		s.Dmg.Hull += 6 * over * over * dt
 	}
+	// the pipe is not advisory: while the corridor is live — hypersonic,
+	// the sheath doing the flying — leaving the band puts the flow onto
+	// the airframe at the wrong angle and the hull pays, faster the
+	// further out and the hotter the sheath. Below hypersonic the
+	// corridor has done its job and the terminal sink is free to steepen.
+	// a grace margin past the painted band, then it costs; and only while
+	// the sheath is actually hot — a cold shallow graze is the skip
+	// meter's business, not the hull's
+	if off := math.Abs(s.GammaError()) - 1.3*s.Width; off > 0 && s.V > 2500 &&
+		s.Pt.QShielded > 0.15*s.Veh.TPSLimit {
+		s.OffCorridor = math.Min(off/math.Max(s.Width, 0.01), 1)
+		s.Dmg.Hull += (0.5 + 2.2*s.OffCorridor) * dt *
+			math.Min(s.Pt.QShielded/s.Veh.TPSLimit+0.2, 1.2)
+	} else {
+		s.OffCorridor = math.Max(s.OffCorridor-1.5*dt, 0)
+	}
 	if over := s.Pt.GLoad/s.Veh.GLimit - 1; over > 0 {
 		s.Dmg.Hull += 4 * over * over * dt
 		// over-g shakes a random system each second it persists
@@ -301,8 +384,11 @@ func (s *Sim) resolve(dt float64) {
 		s.status = Destroyed
 	case s.skipT > 8, s.H > 118000 && s.Gamma > 0.005 && s.V > 5500:
 		s.status = SkippedOut
-	case s.H <= 2000:
-		// chute line: arriving hot is survivable but expensive
+	case s.H <= 2000, s.V < 300 && s.H < 20000:
+		// the deck, or parked: once the ship is under 300 m/s in the
+		// terminal sink the landing is decided — no need to crawl the
+		// last kilometres in real time. Arriving hot is survivable but
+		// expensive.
 		if over := s.V/1200 - 1; over > 0 {
 			s.Dmg.Hull = math.Min(s.Dmg.Hull+25*over, 100)
 		}

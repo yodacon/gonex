@@ -30,8 +30,24 @@ func (a *App) showSinglePlayerMenu() {
 	a.menu.SetItems(
 		&ui.MenuItem{Caption: "Team Deathmatch", Action: func() { a.newGame("deathmatch.xml") }},
 		&ui.MenuItem{Caption: "Sunday Drive", Action: func() { a.newGame("sundaydrive.xml") }},
+		&ui.MenuItem{Caption: "Trader", Action: a.newTraderGame},
 		&ui.MenuItem{Caption: "Return to Main Menu", Action: a.showMainMenu},
 	)
+}
+
+// newTraderGame is the commodity campaign: the deathmatch world's traffic
+// is live — so the lanes are dangerous — and the game is the board: buy
+// low here, sell high there, and use the chart to leave a fight you
+// cannot win.
+func (a *App) newTraderGame() {
+	a.newGame("deathmatch.xml")
+	if !a.running() {
+		return
+	}
+	a.voy.Credits = 8000 // a trader starts on margin, not on savings
+	a.Console.Notifyf("TRADER — the board is at every port (T when docked).")
+	a.Console.Notifyf("Buy low, haul, sell high. The news moves the prices.")
+	a.Console.Notifyf("The lanes are armed: Tab maps the fight, M charts the way OUT of it, J jumps.")
 }
 
 func (a *App) showGameMenu() {

@@ -37,6 +37,30 @@ resources directly** —
       objectives still auto-resolve on arrival — spawning the academy dudes
       into the flight world is the next slice.
 
+## The reentry-trader campaign (landed in one long day)
+
+- [x] Full gameplay loop: dock screens (bar / mission computer with chart +
+      hops / commodity board / outfitter / shipyard), escorts & crew,
+      berth saves, the DED screen, Trader mode with market world events.
+- [x] The landing: seed-grown spaceport metropolis (ascitty formula, twin
+      840 m landing roads, city on both banks, contour shores), mask-dilated
+      plasma shield with dipole field lines, shock puffs, console dial
+      cluster, sonic-boom fine, RCS/lithium/battery consumables, corridor
+      discipline + guardian, and the seamless orbital → ILS-autoland final.
+- [x] fastdraw batch renderer: the whole scene through one white texel and
+      DrawTriangles — 60 fps at metropolis scale.
+- [x] Approach School: ten new missions (300–309) extend the 1997 academy
+      chain past Trading 202 — landing/heat lessons, then the commodity-ship
+      doctrine ladder (`docs/FLIGHT-SCHOOL.md`).
+- [ ] Spawn mission escort/combat ships into the flight world (objectives
+      still auto-resolve on arrival).
+- [ ] Outfitter: cargo pods (hold size), RCS bottles, coil upgrades — the
+      market wants loadout choices beyond the power grid.
+- [ ] Commodity board: per-station price history sparkline; buy/sell
+      spreads at high-tech vs frontier ports.
+- [ ] Takeoff: supersonic departure boom (symmetry with the landing fine).
+- [ ] PilotState save versioning before the format calcifies.
+
 ## Engine
 
 - [ ] Sound (konex disabled its OpenAL path; `snd `resources from the plugin

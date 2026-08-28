@@ -49,6 +49,13 @@ resource fork (PICT 20617 + mask 20618) along with its target, shipyard and
 comm pictures. The extraction pipeline lives in the yodacon repo
 (`tools/rsrc_extract.py`, `tools/pict_decode.py`).
 
+## Playing the trader game
+
+The reentry-trader layer — missions at the bar and mission computer,
+landings flown as MHD-shielded entries, the shipyard/outfitter/crew
+economy, berth saves and the DED screen — is documented in
+[docs/PILOT-GUIDE.md](docs/PILOT-GUIDE.md).
+
 ## Project layout
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Assets under `assets/data`

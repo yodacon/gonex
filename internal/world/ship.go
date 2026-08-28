@@ -41,6 +41,7 @@ type Ship struct {
 	Crew   int
 
 	Autotarget  bool
+	Escort      bool // on the player's payroll; replaced on every launch
 	Target      *Ship
 	Controller  Controller
 	ThrustScale float64 // 0 means stock; the app's power presets set it

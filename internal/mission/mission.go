@@ -110,6 +110,31 @@ func (t *Table) OffersAt(stellar int, bits *Bits, active []Active, rng *rand.Ran
 	return out
 }
 
+// BoardAt is the mission computer's query: every mission whose GIVEN
+// clause matches this stellar and the pilot's control-bit affiliations,
+// dice NOT yet applied. OffersAt is this list after the daily d100 roll —
+// the bar knows who actually walked in today.
+func (t *Table) BoardAt(stellar int, bits *Bits, active []Active) []Def {
+	flying := map[int]bool{}
+	for _, a := range active {
+		flying[a.Def.ID] = true
+	}
+	var out []Def
+	for _, d := range t.Defs {
+		if d.AvailStel != stellar || flying[d.ID] {
+			continue
+		}
+		if d.AvailBitSet >= 0 && !bits.Get(d.AvailBitSet) {
+			continue
+		}
+		if d.AvailBitClr >= 0 && bits.Get(d.AvailBitClr) {
+			continue
+		}
+		out = append(out, d)
+	}
+	return out
+}
+
 // resolveStel maps a stellar field to a concrete stellar for this playthrough.
 func resolveStel(v, origin int, confed []int, rng *rand.Rand) int {
 	switch {

@@ -9,10 +9,42 @@ import (
 
 	"yodacon.org/gonex/internal/ai"
 	"yodacon.org/gonex/internal/gmath"
+	"yodacon.org/gonex/internal/market"
+	"yodacon.org/gonex/internal/mission"
+	"yodacon.org/gonex/internal/power"
+	"yodacon.org/gonex/internal/reentry"
 	"yodacon.org/gonex/internal/world"
 )
 
 const DefaultPath = "save.json"
+
+// PilotState is the voyage half of a save — everything the trader's life
+// carries between landings. The world half snapshots the flight scene. A
+// berth save written on the pad (DockStellar > 0) is what the DED screen
+// resumes from.
+type PilotState struct {
+	Credits, Day, System int
+	Fuel, FuelMax        int
+	Lithium, LiMax       float64
+	RCSFuel, RCSMax      float64
+	Cargo                []int          // tons per market commodity
+	Events               []market.Event // the news in flight
+	Grid                 *power.Grid
+	Dmg                  reentry.Damage
+	BitsSet              []int // indices of set mission control bits
+	Active               []mission.Active
+	Route                []int
+	Escorts              []int // hired escort ship IDs
+	Crew                 int
+	PlayerShipID         int
+	DockStellar          int // >0: saved on the pad at this stellar
+}
+
+// Exists reports whether a save is on disk at path.
+func Exists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
 
 type shipState struct {
 	Pos     gmath.Vec2
@@ -42,11 +74,13 @@ type snapshot struct {
 	Ships      []shipState
 	Planets    []placement
 	Spawns     []placement
-	MainPlayer int // index into Ships
+	MainPlayer int         // index into Ships
+	Pilot      *PilotState `json:",omitempty"`
 }
 
-func Write(w *world.World, path string) error {
-	snap := snapshot{MapW: w.MapW, MapH: w.MapH, Scores: w.Scores, MainPlayer: -1}
+func Write(w *world.World, pilot *PilotState, path string) error {
+	snap := snapshot{MapW: w.MapW, MapH: w.MapH, Scores: w.Scores,
+		MainPlayer: -1, Pilot: pilot}
 	for _, e := range w.Entities {
 		switch v := e.(type) {
 		case *world.Ship:
@@ -76,15 +110,16 @@ func Write(w *world.World, path string) error {
 	return os.WriteFile(path, raw, 0o644)
 }
 
-// Read restores a snapshot into a fresh world and returns it.
-func Read(w *world.World, path string) error {
+// Read restores a snapshot into a fresh world and returns the pilot state
+// (nil for a pre-voyage save).
+func Read(w *world.World, path string) (*PilotState, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var snap snapshot
 	if err := json.Unmarshal(raw, &snap); err != nil {
-		return err
+		return nil, err
 	}
 
 	w.MapW, w.MapH, w.Scores = snap.MapW, snap.MapH, snap.Scores
@@ -106,5 +141,5 @@ func Read(w *world.World, path string) error {
 			w.MainPlayer, w.ViewShip = s, s
 		}
 	}
-	return nil
+	return snap.Pilot, nil
 }

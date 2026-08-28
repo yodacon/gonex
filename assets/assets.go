@@ -56,6 +56,29 @@ func Image(path string) (*ebiten.Image, error) {
 	return img, nil
 }
 
+// Decode loads a texture as a CPU-side image.Image — for callers that need
+// pixel access (mask work) and cannot touch the GPU copy, which Ebitengine
+// forbids reading before the game loop runs. Same path resolution as Image.
+func Decode(path string) (image.Image, error) {
+	resolved := path
+	raw, err := FS.ReadFile(path)
+	if err != nil {
+		alt := siblingExt(path)
+		if alt == "" {
+			return nil, err
+		}
+		if raw, err = FS.ReadFile(alt); err != nil {
+			return nil, fmt.Errorf("assets: %s (and %s) not found", path, alt)
+		}
+		resolved = alt
+	}
+	if strings.HasSuffix(strings.ToLower(resolved), ".tga") {
+		return tga.Decode(bytes.NewReader(raw))
+	}
+	decoded, _, err := image.Decode(bytes.NewReader(raw))
+	return decoded, err
+}
+
 func siblingExt(path string) string {
 	switch {
 	case strings.HasSuffix(path, ".tga"):

@@ -29,11 +29,33 @@ func def(t *testing.T, tb *Table, id int) Def {
 
 func TestLoads36With1997Prose(t *testing.T) {
 	tb := mustLoad(t)
-	if len(tb.Defs) != 36 {
-		t.Fatalf("got %d missions; want 36", len(tb.Defs))
+	// the 36 recovered 1997 records (250–285) plus the 2026 Approach
+	// School branch (300–309, forked from bit 126)
+	if len(tb.Defs) != 46 {
+		t.Fatalf("got %d missions; want 46 (36 recovered + 10 Approach School)", len(tb.Defs))
+	}
+	n97 := 0
+	for _, d := range tb.Defs {
+		if d.ID >= 250 && d.ID <= 285 {
+			n97++
+		}
+	}
+	if n97 != 36 {
+		t.Fatalf("got %d 1997 missions; want all 36 intact", n97)
 	}
 	if d := def(t, tb, 285); d.Brief == "" || d.Restoration == "" {
 		t.Fatalf("285 = %+v; want the 1997 brief and the restoration flag", d)
+	}
+	// the school forks after Trading 202 (bit 126), instead of combat
+	if d := def(t, tb, 300); d.AvailBitSet != 126 || d.AvailStel != 133 {
+		t.Fatalf("300 = %+v; want the Approach School gated on bit 126 at ConEx", d)
+	}
+	// the chain is a ladder: each lesson blocks on its own completion bit
+	for id := 300; id <= 309; id++ {
+		d := def(t, tb, id)
+		if d.CompBitSet != d.AvailBitClr {
+			t.Fatalf("mission %d: compBitSet %d != availBitClr %d", id, d.CompBitSet, d.AvailBitClr)
+		}
 	}
 }
 
