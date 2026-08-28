@@ -72,3 +72,66 @@ func fastLine(dst *ebiten.Image, x0, y0, x1, y1, w float32, c color.RGBA, al flo
 func fastDot(dst *ebiten.Image, x, y, r float32, c color.RGBA, al float64) {
 	fastRect(dst, x-r, y-r, 2*r, 2*r, c, al)
 }
+
+// The glow path: the same batched-quad trick over a radial-gradient
+// texture, drawn ADDITIVELY. Overlapping splats sum toward white exactly
+// the way overlapping incandescent gas reads in a photograph — this is
+// the bloom under every flame, and the corona around the sheath.
+var (
+	glowTex  *ebiten.Image
+	glowOpts = &ebiten.DrawTrianglesOptions{Blend: ebiten.BlendLighter}
+	glowVs   [4]ebiten.Vertex
+)
+
+func glowInit() {
+	if glowTex != nil {
+		return
+	}
+	const n = 64
+	img := image.NewRGBA(image.Rect(0, 0, n, n))
+	for y := 0; y < n; y++ {
+		for x := 0; x < n; x++ {
+			d := math.Hypot(float64(x)-n/2+0.5, float64(y)-n/2+0.5) / (n / 2)
+			if d > 1 {
+				continue
+			}
+			v := (1 - d) * (1 - d) // soft quadratic falloff
+			a := uint8(v * 255)
+			img.SetRGBA(x, y, color.RGBA{a, a, a, a}) // premultiplied white
+		}
+	}
+	glowTex = ebiten.NewImageFromImage(img)
+}
+
+// softDot splats the same radial texture with NORMAL blending — the
+// absorptive counterpart to glowDot. Fire glows; smoke occludes.
+var softOpts = &ebiten.DrawTrianglesOptions{}
+
+func softDot(dst *ebiten.Image, x, y, r float32, c color.RGBA, al float64) {
+	glowInit()
+	p := premul(c, al)
+	cr := float32(p.R) / 255
+	cg := float32(p.G) / 255
+	cb := float32(p.B) / 255
+	ca := float32(p.A) / 255
+	glowVs[0] = ebiten.Vertex{DstX: x - r, DstY: y - r, SrcX: 0, SrcY: 0, ColorR: cr, ColorG: cg, ColorB: cb, ColorA: ca}
+	glowVs[1] = ebiten.Vertex{DstX: x + r, DstY: y - r, SrcX: 64, SrcY: 0, ColorR: cr, ColorG: cg, ColorB: cb, ColorA: ca}
+	glowVs[2] = ebiten.Vertex{DstX: x + r, DstY: y + r, SrcX: 64, SrcY: 64, ColorR: cr, ColorG: cg, ColorB: cb, ColorA: ca}
+	glowVs[3] = ebiten.Vertex{DstX: x - r, DstY: y + r, SrcX: 0, SrcY: 64, ColorR: cr, ColorG: cg, ColorB: cb, ColorA: ca}
+	dst.DrawTriangles(glowVs[:], fastIndices, glowTex, softOpts)
+}
+
+// glowDot splats one additive radial glow of radius r, tinted c.
+func glowDot(dst *ebiten.Image, x, y, r float32, c color.RGBA, al float64) {
+	glowInit()
+	p := premul(c, al)
+	cr := float32(p.R) / 255
+	cg := float32(p.G) / 255
+	cb := float32(p.B) / 255
+	ca := float32(p.A) / 255
+	glowVs[0] = ebiten.Vertex{DstX: x - r, DstY: y - r, SrcX: 0, SrcY: 0, ColorR: cr, ColorG: cg, ColorB: cb, ColorA: ca}
+	glowVs[1] = ebiten.Vertex{DstX: x + r, DstY: y - r, SrcX: 64, SrcY: 0, ColorR: cr, ColorG: cg, ColorB: cb, ColorA: ca}
+	glowVs[2] = ebiten.Vertex{DstX: x + r, DstY: y + r, SrcX: 64, SrcY: 64, ColorR: cr, ColorG: cg, ColorB: cb, ColorA: ca}
+	glowVs[3] = ebiten.Vertex{DstX: x - r, DstY: y + r, SrcX: 0, SrcY: 64, ColorR: cr, ColorG: cg, ColorB: cb, ColorA: ca}
+	dst.DrawTriangles(glowVs[:], fastIndices, glowTex, glowOpts)
+}

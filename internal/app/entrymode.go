@@ -80,6 +80,16 @@ type groundDot struct {
 	lat, ahead float64 // km left/right of track, km ahead of the ship
 }
 
+// smokeBlob is the Stam–Fiume loop's third stage: a flame blob that has
+// cooled past blackbody emission generates one of these — soot that only
+// occludes. It diffuses (radius grows, density falls), rides the wash
+// toward the bottom of the screen, and dies thin.
+type smokeBlob struct {
+	x, y, vx, vy float64
+	r            float64
+	life, span   float64
+}
+
 type trailPt struct {
 	dr, h, v float64 // m downrange, m altitude, m/s velocity
 }
@@ -119,6 +129,7 @@ type entryState struct {
 	boomFine   int       // the noise-abatement fine waiting at the pad
 	trail      []trailPt // downrange/altitude history for the orbit inset
 	parts      []plasmaParticle
+	smoke      []smokeBlob // soot from expired flame blobs, Stam–Fiume style
 	puffs      []shockPuff // pressure rings walking the hull stations
 	puffCD     float64
 
@@ -440,7 +451,9 @@ func (a *App) updateEntry() {
 		inst := math.Max(s.Dmg.Hull-e.lastHull, 0) / (dt * entryTimeScale)
 		e.lastHull = s.Dmg.Hull
 		e.hullRate += (inst - e.hullRate) * math.Min(5*dt, 1)
-		e.pred = s.Predict(60, 4)
+		// the whole remaining descent, not just the next minute: the
+		// dotted pipe runs from here to the landing goal
+		e.pred = s.Predict(420, 6)
 
 		// the damage-control surge runs the plant hot: recovery burns
 		// jump fuel on top of the battery and the vented RCS
@@ -754,7 +767,7 @@ func (a *App) updatePlasma(c reentry.Controls) {
 		// screen — the whole sky feeding the bow wave, the bow wave
 		// routing it around the shield.
 		vpx, vpy := shipX, hy+8
-		for i, n := 0, 10+int(qFrac*32); i < n; i++ {
+		for i, n := 0, 16+int(qFrac*42); i < n; i++ {
 			// most aim straight down the flight path at the standoff cone;
 			// a few go wide so the flanks still stream
 			spread := hrx * 0.7
@@ -794,7 +807,7 @@ func (a *App) updatePlasma(c reentry.Controls) {
 		// 2) envelope fire: born burning on the expanded hull mask itself
 		if len(e.edges) > 0 {
 			sinb, cosb := math.Sin(e.bank*0.7), math.Cos(e.bank*0.7)
-			for i, n := 0, 3+int(qFrac*16)+int(c.Feed*5); i < n; i++ {
+			for i, n := 0, 5+int(qFrac*22)+int(c.Feed*6); i < n; i++ {
 				ed := e.edges[rng.Intn(len(e.edges))]
 				if ed.ny > 0 && rng.Float64() < 0.6 {
 					continue // the bow burns hardest
@@ -907,12 +920,36 @@ func (a *App) updatePlasma(c reentry.Controls) {
 		if p.life < p.span && p.y < gaugeTop+40 &&
 			p.x > -60 && p.x < float64(ScreenW)+60 {
 			live = append(live, p)
+		} else if p.bounced && p.phase > 0.55 && len(e.smoke) < 480 &&
+			rng.Float64() < 0.5 {
+			// Stam–Fiume: a flame blob past blackbody generates smoke —
+			// the soot inherits half the flame's motion and starts diffusing
+			e.smoke = append(e.smoke, smokeBlob{
+				x: p.x, y: p.y, vx: p.vx * 0.4, vy: p.vy*0.4 + 60,
+				r: 5 + 6*p.scale, span: 1.4 + rng.Float64()*1.2,
+			})
 		}
 	}
 	e.parts = live
-	if len(e.parts) > 2000 {
-		e.parts = e.parts[len(e.parts)-2000:]
+	if len(e.parts) > 3000 {
+		e.parts = e.parts[len(e.parts)-3000:]
 	}
+
+	// the smoke pass: update density, move and diffuse — soot spreads,
+	// thins, and washes down the screen with the slipstream
+	liveSmoke := e.smoke[:0]
+	for _, sm := range e.smoke {
+		sm.life += dt
+		sm.r += 26 * dt // diffusion
+		sm.vy += 240 * dt
+		sm.vx += (rng.Float64() - 0.5) * 90 * dt
+		sm.x += sm.vx * dt
+		sm.y += sm.vy * dt
+		if sm.life < sm.span && sm.y < gaugeTop+80 {
+			liveSmoke = append(liveSmoke, sm)
+		}
+	}
+	e.smoke = liveSmoke
 }
 
 func boolf(b bool) float64 {
@@ -1168,6 +1205,14 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 			premul(color.RGBA{255, 120, 60, 255}, veil), false)
 	}
 
+	// --- the smoke first, behind the flames: absorptive soot blobs,
+	// diffusing and washing down-screen
+	for _, sm := range e.smoke {
+		f := 1 - sm.life/sm.span
+		softDot(screen, float32(sm.x), float32(sm.y), float32(sm.r),
+			color.RGBA{46, 38, 40, 255}, 0.30*f)
+	}
+
 	// --- the plasma stream: color is position in the flow, not species —
 	// the ramp walks bow blue → shell yellow → shoulder blue → pink →
 	// white → wake red as each particle rides its field line aft
@@ -1183,10 +1228,12 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 				float32(0.7+p.scale), plasmaRamp(p.phase), al*0.7)
 			continue
 		}
-		// ignited: a flame lick — a streak along the velocity with a hot
-		// core, so the deflected stream reads as fire, not confetti
+		// ignited: a flame lick — an additive glow splat under a streak
+		// along the velocity with a hot core, so the deflected stream
+		// reads as incandescent gas, not confetti
 		r := float32((1.0 + 1.5*f) * p.scale)
 		col := plasmaRamp(p.phase)
+		glowDot(screen, float32(p.x), float32(p.y), r*3.2, col, al*0.4)
 		fastLine(screen,
 			float32(p.x-p.vx*0.045), float32(p.y-p.vy*0.045),
 			float32(p.x), float32(p.y), r*1.1, col, al*0.7)
@@ -1201,6 +1248,18 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 	auth := math.Min(s.Pt.InteractionQ, 1)
 	rx0 := 40 + standPx*0.85
 	lobe := -e.roll
+	// the corona: the whole sheath glows additively like a coronagraph
+	// frame — a broad orange envelope, a white-hot kernel at the bow, and
+	// a red flare when the flow is scrubbing bare hull
+	if fireGlow := math.Min(qFrac*1.6, 1); fireGlow > 0.03 && s.V > 900 {
+		gcx, gcy := float32(shipX-e.bank*30), float32(shipDrawY)
+		glowDot(screen, gcx, gcy, float32(150+standPx*2), colHeat, 0.10+0.30*fireGlow)
+		glowDot(screen, gcx, float32(nose-standPx*0.5), float32(60+standPx),
+			color.RGBA{255, 236, 200, 255}, 0.35*fireGlow)
+		if s.OffCorridor > 0.05 {
+			glowDot(screen, gcx, gcy, 220, colBad, 0.25*s.OffCorridor)
+		}
+	}
 	// the plasma bow wave proper: the fire grid bent along the shell,
 	// burning UNDER the mirror line — the sheath the ship pushes ahead
 	drawBowFire(screen, e.bowFire, bowGeom{
@@ -1258,6 +1317,36 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 		screen.DrawImage(e.glowImg, op)
 	}
 	screen.DrawImage(shipImg, place(shipImg, 1))
+
+	// hull incandescence: with the shield collapsed (gate near zero) or
+	// the cooling loop overloaded, the airframe itself starts to glow —
+	// the meteor look: blackbody orange over the whole silhouette,
+	// flickering, with an additive halo hugging the mask. The shield
+	// failing is something you SEE on the hull before the gauges agree.
+	overload := 0.0
+	if s.Pt.Gate < 0.2 {
+		overload = (0.2 - s.Pt.Gate) / 0.2
+	}
+	if gd := a.voy.Grid; gd != nil && gd.HeatFrac() > 0.85 {
+		overload = math.Max(overload, math.Min((gd.HeatFrac()-0.85)*3, 1))
+	}
+	overload = math.Max(overload, s.OffCorridor)
+	overload *= math.Min(qFrac*3, 1)
+	if overload > 0.03 && s.V > 900 {
+		flick := 0.8 + 0.2*math.Sin(s.T*23+2*math.Sin(s.T*9))
+		hot := place(shipImg, 1)
+		hot.Blend = ebiten.BlendLighter
+		hot.ColorScale.Scale(1, 0.42, 0.14, 1)
+		hot.ColorScale.ScaleAlpha(float32(overload * flick * 0.85))
+		screen.DrawImage(shipImg, hot)
+		if e.glowImg != nil {
+			halo := place(e.glowImg, 1.05)
+			halo.Blend = ebiten.BlendLighter
+			halo.ColorScale.Scale(1, 0.4, 0.12, 1)
+			halo.ColorScale.ScaleAlpha(float32(overload * flick * 0.7))
+			screen.DrawImage(e.glowImg, halo)
+		}
+	}
 
 	// the shock puffs: thin rings expanding off the hull stations
 	if len(e.puffs) > 0 {
@@ -1337,7 +1426,24 @@ func (a *App) drawTrajProjection(screen *ebiten.Image, hy float64) {
 		}
 	}
 	ui.DrawText(screen, "PIPE", shipX+80, hy+(-s.RefG)*pxPerDeg-4, 0.6)
-	// the dots: the projected positions, red once they leave the band
+	// the landing goal: the pad, marked at its own depression angle —
+	// this is where the dotted line is supposed to arrive
+	if s.PadDist > 4 {
+		padDrop := math.Atan2(s.H, s.PadDist*1000) * 180 / math.Pi
+		py := hy + padDrop*pxPerDeg
+		if py < gaugeTop-12 {
+			fy := float32(py)
+			vector.StrokeLine(screen, float32(shipX-7), fy, float32(shipX), fy-7, 1.4, hudGreen, false)
+			vector.StrokeLine(screen, float32(shipX), fy-7, float32(shipX+7), fy, 1.4, hudGreen, false)
+			vector.StrokeLine(screen, float32(shipX+7), fy, float32(shipX), fy+7, 1.4, hudGreen, false)
+			vector.StrokeLine(screen, float32(shipX), fy+7, float32(shipX-7), fy, 1.4, hudGreen, false)
+			ui.DrawText(screen, fmt.Sprintf("PAD %.0f km", s.PadDist), shipX+14, py-4, 0.7)
+		}
+	}
+	// the dots: the projected positions all the way to the landing goal,
+	// red wherever the stick's future leaves the band
+	lastY := 0.0
+	var lastP reentry.PredPt
 	for k, p := range e.pred {
 		dKm := (p.Downrange - s.Downrange) / 1000
 		if dKm < 0.5 {
@@ -1355,12 +1461,17 @@ func (a *App) drawTrajProjection(screen *ebiten.Image, hy float64) {
 			col = colBad
 		}
 		f := float64(k) / float64(len(e.pred))
-		fastDot(screen, float32(shipX), float32(y), 2.4, col, 0.85*(1-0.45*f))
-		if k == len(e.pred)-1 {
-			vector.StrokeCircle(screen, float32(shipX), float32(y), 6, 1,
-				premul(col, 0.8), false)
-			ui.DrawText(screen, fmt.Sprintf("+%.0fs", p.T), shipX+12, y-4, 0.6)
+		fastDot(screen, float32(shipX), float32(y), 2.4, col, 0.9*(1-0.35*f))
+		lastY, lastP = y, p
+	}
+	if lastY > 0 {
+		label := fmt.Sprintf("+%.0fs", lastP.T)
+		if lastP.H < 4000 {
+			label = fmt.Sprintf("LAND +%.0fs", lastP.T)
 		}
+		vector.StrokeCircle(screen, float32(shipX), float32(lastY), 6, 1,
+			premul(hudGreen, 0.85), false)
+		ui.DrawText(screen, label, shipX+12, lastY-4, 0.7)
 	}
 }
 

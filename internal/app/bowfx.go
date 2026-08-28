@@ -75,7 +75,10 @@ func drawBowFire(dst *ebiten.Image, f *fx.Fire, g bowGeom) {
 			px := bx + dirX*v*4.5 + side*v*v*0.4
 			py := by + dirY*v*5.0 + v*v*0.85
 			r := float32(c*(4.6+v*0.7) + 1.1)
-			fastDot(dst, float32(px), float32(py), r, fireBand(c),
+			col := fireBand(c)
+			glowDot(dst, float32(px), float32(py), r*2.8, col,
+				math.Min(c*0.55, 0.55)*g.alpha)
+			fastDot(dst, float32(px), float32(py), r, col,
 				math.Min(c*1.6, 1)*g.alpha)
 		}
 	}
@@ -112,9 +115,8 @@ func drawMachCloud(dst *ebiten.Image, f *fx.Fire, cx, cy, mach, alpha float64) {
 			py := by + dirY*v*6.5 + v*v*0.5
 			al := math.Min(c*1.1, 0.75) * alpha
 			r := float32(c*9 + v*1.1 + 2.5)
-			// two stacked dots read as volume: a wide faint body and a
-			// brighter kernel
-			fastDot(dst, float32(px), float32(py), r*1.9, white, al*0.35)
+			// a wide additive glow body under a brighter kernel: volume
+			glowDot(dst, float32(px), float32(py), r*2.3, white, al*0.5)
 			fastDot(dst, float32(px), float32(py), r, white, al)
 		}
 	}
