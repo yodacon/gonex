@@ -68,6 +68,8 @@ type App struct {
 	entry   *entryState
 	dock    *dockState
 	deorbit *deorbitState
+	warp    *warpState
+	docking *dockingRequest
 
 	background *ebiten.Image
 	started    time.Time
@@ -129,6 +131,17 @@ func New() (*App, error) {
 				}
 			} else if _, err := fmt.Sscanf(boot, "deorbit %d", &id); err == nil && id > 0 {
 				a.startDeorbit(id)
+			} else if _, err := fmt.Sscanf(boot, "dock %d", &id); err == nil && id > 0 {
+				a.dock = &dockState{stellar: id}
+				a.mode = modeLanded
+			} else if _, err := fmt.Sscanf(boot, "route %d", &id); err == nil && id > 0 {
+				a.voy.Route = a.gal.Route(a.voy.System, id)
+			} else if _, err := fmt.Sscanf(boot, "warp %d", &id); err == nil && id > 0 {
+				a.voy.Route = a.gal.Route(a.voy.System, id)
+				if beacon, _, ok := a.warpBeacon(); ok && a.World.MainPlayer != nil {
+					a.World.MainPlayer.P = beacon
+					a.tryJump()
+				}
 			}
 		}
 	}
@@ -169,6 +182,7 @@ func (a *App) newGame(scenePath string) {
 func (a *App) endGame() {
 	a.World = nil
 	a.voy, a.entry, a.dock, a.deorbit = nil, nil, nil, nil
+	a.warp, a.docking = nil, nil
 	a.mode = modeFlight
 	a.setGameStatus(false)
 }
@@ -231,6 +245,8 @@ func (a *App) Update() error {
 
 	if a.running() && !a.paused {
 		switch a.mode {
+		case modeWarp:
+			a.updateWarp()
 		case modeDeorbit:
 			a.updateDeorbit()
 		case modeEntry:
@@ -245,6 +261,7 @@ func (a *App) Update() error {
 			if a.Console.State == console.Hidden {
 				a.handlePlayerInput()
 			}
+			a.updateDocking()
 			a.World.Update(dt)
 			if a.World.ViewShip != nil {
 				a.cam.Follow(a.World.ViewShip.Pos())
@@ -257,6 +274,9 @@ func (a *App) Update() error {
 
 func (a *App) Draw(screen *ebiten.Image) {
 	switch {
+	case a.running() && a.mode == modeWarp && a.warp != nil:
+		screen.Fill(color.RGBA{2, 4, 8, 255})
+		a.drawWarp(screen)
 	case a.running() && a.mode == modeDeorbit && a.deorbit != nil:
 		screen.Fill(color.RGBA{0, 0, 0, 255})
 		a.stars.Draw(screen)
@@ -272,8 +292,12 @@ func (a *App) Draw(screen *ebiten.Image) {
 		a.stars.Draw(screen)
 		a.Renderer.DrawWorld(screen, a.World, a.cam)
 		a.Renderer.DrawTargetOverlay(screen, a.World, a.cam)
+		a.drawFlightOverlays(screen)
 	default:
 		a.drawSplash(screen)
+	}
+	if a.running() {
+		a.drawModeBanner(screen)
 	}
 	a.cview.DrawNotify(screen, dt)
 	a.wm.Draw(screen)

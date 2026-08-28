@@ -20,7 +20,9 @@ import (
 var Folders = []string{
 	"advisor", "callisto", "citrus", "dart", "defender", "gryphon",
 	"large pin", "necromancer", "small pin", "tomaquad", "trident", "yodacon",
-	"yodacon97", // recovered from the original 1997 ConEx plugin
+	// recovered byte-exact from the original 1997 ConEx plugin
+	"yodacon97", "small-pin97", "medium-pin97", "large-pin97", "dart97",
+	"defender97", "gryphon97", "trident97", "necromancer97", "tomaquad97",
 }
 
 type Spec struct {

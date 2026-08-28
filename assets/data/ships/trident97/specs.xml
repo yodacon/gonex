@@ -1,0 +1,9 @@
+<Ship>
+    <ShipName Value="Trident '97" />
+    <MaxVelocity Value="500" />
+    <TurnSpeed Value="120" />
+    <Acceleration Value="435" />
+    <Mass Value="10" />
+    <CollisionRadius Value="17" />
+    <Damage Value="100" />
+</Ship>

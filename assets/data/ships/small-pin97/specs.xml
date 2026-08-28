@@ -1,0 +1,9 @@
+<Ship>
+    <ShipName Value="Small Pin '97" />
+    <MaxVelocity Value="550" />
+    <TurnSpeed Value="120" />
+    <Acceleration Value="435" />
+    <Mass Value="90" />
+    <CollisionRadius Value="18" />
+    <Damage Value="100" />
+</Ship>

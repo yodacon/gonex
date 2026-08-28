@@ -1,0 +1,9 @@
+<Ship>
+    <ShipName Value="Tomaquad '97" />
+    <MaxVelocity Value="300" />
+    <TurnSpeed Value="60" />
+    <Acceleration Value="185" />
+    <Mass Value="300" />
+    <CollisionRadius Value="30" />
+    <Damage Value="100" />
+</Ship>

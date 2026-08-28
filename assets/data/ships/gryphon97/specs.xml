@@ -1,0 +1,9 @@
+<Ship>
+    <ShipName Value="Gryphon '97" />
+    <MaxVelocity Value="800" />
+    <TurnSpeed Value="120" />
+    <Acceleration Value="800" />
+    <Mass Value="10" />
+    <CollisionRadius Value="16" />
+    <Damage Value="100" />
+</Ship>

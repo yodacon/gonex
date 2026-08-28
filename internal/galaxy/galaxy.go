@@ -35,6 +35,7 @@ type Stellar struct {
 	Tech    int     `json:"tech"`
 	Sprite  int     `json:"sprite"`
 	Landing Landing `json:"landing"`
+	LandPic int     `json:"landPic"` // 1997 CustPicID view, 0 = none
 	Source  string  `json:"source"`
 }
 

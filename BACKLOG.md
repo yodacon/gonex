@@ -15,9 +15,11 @@ resources directly** —
       (EV units → konex units conversion table).
 - [ ] StuffIt5 ("Arsenic") and BinHex decoders are the hard 10% — keep using
       `unar` offline for that step, or bind libxad.
-- [ ] Recover the remaining ConEx ships whose sprites live in the plugin
-      (S/M/L Pin, Dart, Gryphon, Trident, Necromancer, Tomaquad already
-      composited in `yodacon/extracted/sprites/`).
+- [x] Recover the remaining ConEx ships — all nine 1997 banks now fly
+      (`*-97` folders: pins, Dart, Defender, Gryphon, Trident, Necromancer,
+      Tomaquad), sliced with specs, target/yard/comm art by
+      `yodacon/data/export_ships.py`; plus the CustPicID landing views
+      (ConEx / Exeon / Cenron) behind the dock screen.
 
 ## Gameplay
 

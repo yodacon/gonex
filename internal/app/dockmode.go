@@ -8,6 +8,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 
+	"yodacon.org/gonex/assets"
 	"yodacon.org/gonex/internal/mission"
 	"yodacon.org/gonex/internal/reentry"
 	"yodacon.org/gonex/internal/ui"
@@ -115,6 +116,20 @@ func (a *App) drawDock(screen *ebiten.Image) {
 	sys := a.gal.Systems[st.System]
 
 	vector.DrawFilledRect(screen, 0, 0, ScreenW, ScreenH, color.RGBA{5, 7, 10, 255}, false)
+
+	// the 1997 landing view — "their backgrounds will amaze you"
+	if st.LandPic > 0 {
+		if pic, err := assets.Image(fmt.Sprintf("data/conex/land/%d.png", st.LandPic)); err == nil {
+			b := pic.Bounds()
+			op := &ebiten.DrawImageOptions{}
+			scale := float64(ScreenW) / float64(b.Dx())
+			op.GeoM.Scale(scale, scale)
+			op.ColorScale.ScaleAlpha(0.5)
+			screen.DrawImage(pic, op)
+			vector.DrawFilledRect(screen, 0, 0, ScreenW, ScreenH,
+				premul(color.RGBA{5, 7, 10, 255}, 0.35), false)
+		}
+	}
 
 	// the ship on the pad
 	yard := a.Catalog.Get(a.Cfg.PlayerShipID).Yard

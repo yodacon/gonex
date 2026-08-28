@@ -47,20 +47,13 @@ func (a *App) handlePlayerInput() {
 		a.toggleWindow(a.galaxyWin)
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyJ) && a.voy != nil {
-		if next, ok := a.voy.Jump(a.gal); ok {
-			a.enterSystem(next)
-			a.drainNotices()
-		} else if a.voy.NextJump() < 0 {
-			a.Console.Notifyf("No course plotted — open the chart (M) and click a system.")
-		} else {
-			a.Console.Notifyf("Not enough fuel to jump (%d/%d).", a.voy.Fuel, jumpFuel)
-		}
+		a.tryJump()
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyL) && a.voy != nil {
 		if id := a.nearbyStellar(); id > 0 {
-			a.startDeorbit(id)
+			a.requestDocking(id)
 		} else {
-			a.Console.Notifyf("No port in landing range — fly closer to a planet.")
+			a.Console.Notifyf("No port in approach range — fly closer to a planet.")
 		}
 	}
 }

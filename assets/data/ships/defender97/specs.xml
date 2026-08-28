@@ -1,0 +1,9 @@
+<Ship>
+    <ShipName Value="Defender '97" />
+    <MaxVelocity Value="900" />
+    <TurnSpeed Value="180" />
+    <Acceleration Value="750" />
+    <Mass Value="10" />
+    <CollisionRadius Value="18" />
+    <Damage Value="100" />
+</Ship>
