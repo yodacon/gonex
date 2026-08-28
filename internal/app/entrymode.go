@@ -747,24 +747,32 @@ func (a *App) updatePlasma(c reentry.Controls) {
 
 	rng := a.voy.Rng
 	if s.V > 900 {
-		// 1) the major drift: the flame river pouring out of the horizon.
-		// Streams are born close to the vanishing point and ride the
-		// sightline down onto the ship — the whole sky visibly feeding
-		// the bow wave, which routes it around the shield.
+		// 1) the major drift: the flame river pouring out of the horizon,
+		// dead in the ship's path. Streams are born hard against the
+		// vanishing point, ride the sightline down onto the bow, and the
+		// deflected ones wash past the camera toward the bottom of the
+		// screen — the whole sky feeding the bow wave, the bow wave
+		// routing it around the shield.
 		vpx, vpy := shipX, hy+8
-		for i, n := 0, 6+int(qFrac*22); i < n; i++ {
-			tx := cx + (rng.Float64()-0.5)*2*hrx*1.15
-			ty := cy + (rng.Float64()-0.5)*36
+		for i, n := 0, 10+int(qFrac*32); i < n; i++ {
+			// most aim straight down the flight path at the standoff cone;
+			// a few go wide so the flanks still stream
+			spread := hrx * 0.7
+			if rng.Float64() < 0.25 {
+				spread = hrx * 1.3
+			}
+			tx := cx + (rng.Float64()-0.5)*2*spread
+			ty := cy + (rng.Float64()-0.5)*30
 			fr := rng.Float64()
-			f := 0.03 + fr*fr*0.3 // biased hard toward the horizon
-			px := vpx + (tx-vpx)*f + (rng.Float64()-0.5)*18
+			f := 0.02 + fr*fr*0.28 // biased hard toward the horizon
+			px := vpx + (tx-vpx)*f + (rng.Float64()-0.5)*14
 			py := vpy + (ty-vpy)*f
 			dx, dy := tx-px, ty-py
 			l := math.Hypot(dx, dy) + 1e-6
-			sp := (300 + 500*(s.V/8350)) * (0.25 + f)
+			sp := (320 + 520*(s.V/8350)) * (0.25 + f)
 			e.parts = append(e.parts, plasmaParticle{
 				x: px, y: py, vx: dx / l * sp, vy: dy / l * sp,
-				span: 1.0 + rng.Float64()*0.6, scale: 0.12 + f*0.5,
+				span: 1.1 + rng.Float64()*0.7, scale: 0.12 + f*0.5,
 			})
 		}
 		// 1b) out of the pipe: glowing damage traces tear off the hull —
@@ -886,14 +894,16 @@ func (a *App) updatePlasma(c reentry.Controls) {
 			}
 			p.phase = math.Min(p.phase+dt*0.85, 1)
 		}
+		// the wash: everything in the flow drafts toward the bottom of
+		// the screen — gently on approach, hard once it is past the nose
+		// and the slipstream owns it
+		depth := math.Max(0, (p.y-nose)/(float64(ScreenH)-nose))
+		p.vy += (150 + 430*depth) * dt
 		// past the ship the wake dives toward the camera: spread and grow
-		grow := 1 + 2.2*math.Max(0, (p.y-nose)/(float64(ScreenH)-nose))
+		grow := 1 + 2.2*depth
 		p.scale += 1.1 * dt * grow * boolf(p.bounced)
 		p.x += p.vx * dt * grow
 		p.y += p.vy * dt * grow
-		if !p.bounced && p.y > cy+80 {
-			continue // missed the envelope: slipstream, not fire
-		}
 		if p.life < p.span && p.y < gaugeTop+40 &&
 			p.x > -60 && p.x < float64(ScreenW)+60 {
 			live = append(live, p)
