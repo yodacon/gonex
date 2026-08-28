@@ -127,6 +127,7 @@ type Sim struct {
 	RefG     float64 // reference gamma this frame, deg
 	Width    float64 // corridor half-width this frame, deg
 	PadDist  float64 // km of downrange remaining to the pad
+	LastLD   float64 // vertical L/D actually applied this frame — the predictor's input
 
 	// steering authority split, 0..1 each — the handoff the HUD narrates.
 	// PlasmaAuth is the MHD cone's grip (dies as the sheath cools and the
@@ -141,6 +142,15 @@ type Sim struct {
 	// dumping lithium feed to save the hull.
 	OffCorridor float64
 	GuardianOn  bool
+
+	// the damage-control reflex: hull burning off the corridor trips the
+	// flight computer into RECOVERY — it takes the stick and flies back
+	// toward the centerline for a few seconds or until the correction
+	// holds, surging the coil and the seed (battery and lithium pay) and
+	// venting RCS through the emergency thrusters. A cooked computer
+	// (>60%) has no reflex left.
+	recoveryT  float64 // seconds of override remaining
+	recoveryCD float64 // lockout before the reflex can trip again
 
 	auto autoland
 	rng  *rand.Rand
@@ -216,6 +226,39 @@ func (s *Sim) Step(dt float64, c Controls) {
 		c = s.auto.fly(s, c, dt)
 	}
 
+	// the damage-control reflex (manual flight only — the autoland IS the
+	// computer). Burning off the corridor trips it; it holds the stick
+	// until the needle is most of the way home or its few seconds run out.
+	s.recoveryCD = math.Max(s.recoveryCD-dt, 0)
+	recovering := false
+	if !c.Auto && s.Dmg.Computer < 60 {
+		// steep side only: the reflex pulls you out of a burning dive.
+		// The shallow side stays the pilot's problem — the skip meter is
+		// the warning there, and skipping out remains possible.
+		if s.recoveryT <= 0 && s.recoveryCD <= 0 && s.OffCorridor > 0.25 &&
+			s.GammaError() < 0 {
+			s.recoveryT = 5
+		}
+		if s.recoveryT > 0 {
+			s.recoveryT -= dt
+			err := s.GammaError()
+			if math.Abs(err) < 0.4*s.Width {
+				s.recoveryT = 0
+				s.recoveryCD = 6
+			} else {
+				recovering = true
+				c.Pitch = math.Min(math.Max(-err*1.4, -1), 1)
+				// the emergency thrusters vent hard to swing a freighter
+				s.RCS = math.Max(s.RCS-0.5*s.Veh.WeightFactor()*dt, 0)
+			}
+			if s.recoveryT <= 0 {
+				s.recoveryCD = 6
+			}
+		}
+	} else {
+		s.recoveryT = 0
+	}
+
 	// resource bookkeeping
 	feed := math.Min(math.Max(c.Feed, 0), 1) * maxFeed
 	if c.Burst && s.burstTimer <= 0 && s.Li > 2 {
@@ -236,6 +279,9 @@ func (s *Sim) Step(dt float64, c Controls) {
 			feed = maxFeed
 		}
 	}
+	if recovering && s.Li > 0 && feed < maxFeed {
+		feed = maxFeed // the reflex floods the shield while it flies you home
+	}
 	if feed*dt > s.Li {
 		feed = s.Li / dt
 	}
@@ -250,6 +296,9 @@ func (s *Sim) Step(dt float64, c Controls) {
 	if s.boostTimer > 0 {
 		s.boostTimer -= dt
 		b *= 1.8
+	}
+	if recovering {
+		b *= 1.3 // shield surge: the extra draw comes off the battery
 	}
 
 	s.Pt = stateAt(s.H, s.V, s.Veh, s.Prof, b, feed)
@@ -296,6 +345,7 @@ func (s *Sim) Step(dt float64, c Controls) {
 	ldMax := s.Veh.LDMax + (s.Veh.GlideLD-s.Veh.LDMax)*math.Min(s.AeroAuth*1.2, 1)
 	ld := pitch * ldMax * (0.55 + 0.45*grip) * rcsAuth
 	ldVert := ld * (1 - 0.4*math.Abs(roll))
+	s.LastLD = ldVert
 
 	// crossrange walk: the cone steers where the plasma grips, the airframe
 	// steers where the air does — both through the thrusters' authority
@@ -388,6 +438,9 @@ func (s *Sim) accrueDamage(dt float64) {
 // flashes CORRIDOR ABORT as it fills.
 func (s *Sim) SkipWarn() float64 { return math.Min(s.skipT/8, 1) }
 
+// Recovering reports the damage-control reflex holding the stick.
+func (s *Sim) Recovering() bool { return s.recoveryT > 0 }
+
 func (s *Sim) resolve(dt float64) {
 	// The skip meter: flying flat or climbing while still hypersonic and
 	// above the thick air means the atmosphere is not keeping you — you are
@@ -417,6 +470,44 @@ func (s *Sim) resolve(dt float64) {
 			s.status = Landed
 		}
 	}
+}
+
+// PredPt is one sample of a projected trajectory.
+type PredPt struct {
+	T, V, Gamma, H, Downrange float64
+}
+
+// Predict flies the ship forward from its current state holding the
+// current vertical L/D — "where does this stick position put me" — with
+// the same equations of motion as Step, no damage, no resources. The HUD
+// draws it as the dotted future-position line; the pilot reads it as the
+// answer to whether the needle is about to leave the pipe.
+func (s *Sim) Predict(horizon, sample float64) []PredPt {
+	sArea := math.Pi * s.Veh.Diameter * s.Veh.Diameter / 4
+	mu := earthMu * s.Prof.GravityScale
+	dragF := s.Pt.DragFactor
+	if dragF <= 0 {
+		dragF = 1
+	}
+	v, gam, h, dr := s.V, s.Gamma, s.H, s.Downrange
+	out := []PredPt{}
+	const dt = 0.5
+	for t := 0.0; t <= horizon && h > 2500 && v > 320; t += dt {
+		rho, _ := Atm(h, s.Prof.AtmosScale)
+		r := earthR + h
+		g := mu / (r * r)
+		d := 0.5 * rho * v * v * sArea * cd0 * dragF
+		l := 0.5 * rho * v * v * sArea * cd0 * s.LastLD
+		v += dt * (-d/s.Veh.Mass - g*math.Sin(gam))
+		gam += dt * (l/(s.Veh.Mass*math.Max(v, 1)) +
+			(v/r-g/math.Max(v, 1))*math.Cos(gam))
+		h += dt * v * math.Sin(gam)
+		dr += dt * v * math.Cos(gam) * earthR / r
+		if math.Mod(t+dt, sample) < dt {
+			out = append(out, PredPt{T: t + dt, V: v, Gamma: gam, H: h, Downrange: dr})
+		}
+	}
+	return out
 }
 
 // Score summarises a landed entry for the pay screen.

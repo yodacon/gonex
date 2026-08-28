@@ -144,6 +144,57 @@ func TestAutolandNominalAtGameRate(t *testing.T) {
 	}
 }
 
+// The predictor must fly the same physics as Step: holding the autoland's
+// L/D from mid-corridor, the 30-second projection should stay near what
+// the real sim does over the same 30 seconds.
+func TestPredictTracksTheSim(t *testing.T) {
+	s := New(Yodacon(), EarthProfile(), 1)
+	for i := 0; i < 400; i++ { // fly into the corridor proper
+		s.Step(0.2, Controls{Auto: true})
+	}
+	pred := s.Predict(30, 3)
+	if len(pred) < 5 {
+		t.Fatalf("prediction too short: %d samples", len(pred))
+	}
+	p0 := pred[len(pred)-1]
+	if p0.H >= s.H {
+		t.Errorf("mid-corridor projection should descend: H %.0f -> %.0f", s.H, p0.H)
+	}
+	if p0.V >= s.V {
+		t.Errorf("projection should decelerate: V %.0f -> %.0f", s.V, p0.V)
+	}
+}
+
+// A held burning dive must trip the damage-control reflex: the computer
+// takes the stick, floods the shield, and vents RCS — so the same dive
+// costs measurably more propellant than the ship had before the reflex.
+func TestRecoveryReflexFightsTheDive(t *testing.T) {
+	s := New(Yodacon(), EarthProfile(), 2)
+	tripped := false
+	for i := 0; i < 6000 && s.Status() == Flying; i++ {
+		s.Step(0.2, Controls{Pitch: -1})
+		if s.Recovering() {
+			tripped = true
+		}
+	}
+	if !tripped {
+		t.Fatal("a burning dive never tripped the recovery reflex")
+	}
+	if s.RCS >= s.Veh.RCSTank*0.8 {
+		t.Errorf("the reflex should vent RCS hard: %.1f of %.0f kg left",
+			s.RCS, s.Veh.RCSTank)
+	}
+	// a cooked computer has no reflex
+	s2 := New(Yodacon(), EarthProfile(), 2)
+	s2.Dmg.Computer = 80
+	for i := 0; i < 6000 && s2.Status() == Flying; i++ {
+		s2.Step(0.2, Controls{Pitch: -1})
+		if s2.Recovering() {
+			t.Fatal("a failed computer must not fly the recovery")
+		}
+	}
+}
+
 // A hold stuffed to the 120% clamp limit must still be landable on the
 // computer — heavier, hotter, harder, but never a death sentence. The
 // same flight must also cost more RCS than the empty ship's: the weight

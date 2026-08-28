@@ -158,6 +158,15 @@ type entryState struct {
 	// the live trace against, exactly the console prototype's h–V plane
 	expected     []trailPt
 	karmanCalled bool // the 100 km callout, made once on the way down
+
+	// the pipe made legible: hullRate is smoothed %-per-sim-second hull
+	// loss (drives the BURNING warnings), pred is the dotted green
+	// future-position ladder from Sim.Predict, fuelBurn accumulates the
+	// jump fuel the damage-control surge eats
+	lastHull float64
+	hullRate float64
+	pred     []reentry.PredPt
+	fuelBurn float64
 }
 
 // The plasma ramp: the sheath read as layers, front to wake — blue at the
@@ -311,6 +320,7 @@ func (a *App) startEntry(stellarID int) {
 		expected:  flyExpected(veh, prof, seed),
 	}
 	e.machCloud.Cooling = 0.988 // condensation lingers; plasma doesn't
+	e.lastHull = sim.Dmg.Hull   // carried-in damage is not "burning now"
 	for i := 0; i < 110; i++ {
 		e.ground = append(e.ground, groundDot{
 			lat:   (a.voy.Rng.Float64() - 0.5) * 56,
@@ -425,6 +435,23 @@ func (a *App) updateEntry() {
 		a.voy.Lithium = s.Li
 		a.voy.RCSFuel = s.RCS
 
+		// the pipe's teaching aids: smoothed hull-loss rate for the
+		// BURNING warnings, and the future-position ladder
+		inst := math.Max(s.Dmg.Hull-e.lastHull, 0) / (dt * entryTimeScale)
+		e.lastHull = s.Dmg.Hull
+		e.hullRate += (inst - e.hullRate) * math.Min(5*dt, 1)
+		e.pred = s.Predict(60, 4)
+
+		// the damage-control surge runs the plant hot: recovery burns
+		// jump fuel on top of the battery and the vented RCS
+		if s.Recovering() {
+			e.fuelBurn += 0.2 * dt * entryTimeScale
+			if e.fuelBurn >= 1 && a.voy.Fuel > 0 {
+				e.fuelBurn--
+				a.voy.Fuel--
+			}
+		}
+
 		// the handoff call: plasma lets go, the airframe takes it
 		if !e.pipeCalled && s.AeroAuth > s.PlasmaAuth && s.T > 30 {
 			e.pipeCalled = true
@@ -494,17 +521,23 @@ func (a *App) updateEntry() {
 			e.finalSpd = math.Max(s.V/1000, 0.24)
 			a.Console.Notifyf("DESTINATION SPACEPORT — ILS glideslope captured. Cleared autoland.")
 		}
+		// like the corridor, the final is not flown in real time: the
+		// approach, flare and rollout run at 20x wall clock — the same
+		// slope over the same ground, just without the taxi-speed wait.
+		// finalT stays on wall time so the HUD wobble keeps its period.
+		const finalTimeScale = 20.0
+		fdt := dt * finalTimeScale
 		e.finalT += dt
 		switch {
 		case e.finalRun < 0: // the slope: h rides 3° above the ground run
-			e.finalRun += e.finalSpd * dt
+			e.finalRun += e.finalSpd * fdt
 			e.finalH = math.Max(-e.finalRun*0.0524, 0.02)
 			if e.finalRun > -0.35 {
-				e.finalSpd = math.Max(e.finalSpd-0.16*dt, 0.22) // the flare
+				e.finalSpd = math.Max(e.finalSpd-0.16*fdt, 0.22) // the flare
 			}
 		default: // rollout on the spaceport road
-			e.finalSpd = math.Max(e.finalSpd-0.22*dt, 0)
-			e.finalRun += e.finalSpd * dt
+			e.finalSpd = math.Max(e.finalSpd-0.22*fdt, 0)
+			e.finalRun += e.finalSpd * fdt
 			e.finalH = 0.012
 			if e.finalSpd <= 0.01 {
 				e.finalDone = true
@@ -714,13 +747,16 @@ func (a *App) updatePlasma(c reentry.Controls) {
 
 	rng := a.voy.Rng
 	if s.V > 900 {
-		// 1) inflow from the horizon: faint neutral streaks out of the
-		// vanishing point, converging on the ship with perspective speed
+		// 1) the major drift: the flame river pouring out of the horizon.
+		// Streams are born close to the vanishing point and ride the
+		// sightline down onto the ship — the whole sky visibly feeding
+		// the bow wave, which routes it around the shield.
 		vpx, vpy := shipX, hy+8
-		for i, n := 0, 2+int(qFrac*7); i < n; i++ {
+		for i, n := 0, 6+int(qFrac*22); i < n; i++ {
 			tx := cx + (rng.Float64()-0.5)*2*hrx*1.15
 			ty := cy + (rng.Float64()-0.5)*36
-			f := 0.05 + rng.Float64()*0.28 // how far along the sightline
+			fr := rng.Float64()
+			f := 0.03 + fr*fr*0.3 // biased hard toward the horizon
 			px := vpx + (tx-vpx)*f + (rng.Float64()-0.5)*18
 			py := vpy + (ty-vpy)*f
 			dx, dy := tx-px, ty-py
@@ -750,7 +786,7 @@ func (a *App) updatePlasma(c reentry.Controls) {
 		// 2) envelope fire: born burning on the expanded hull mask itself
 		if len(e.edges) > 0 {
 			sinb, cosb := math.Sin(e.bank*0.7), math.Cos(e.bank*0.7)
-			for i, n := 0, 2+int(qFrac*12)+int(c.Feed*4); i < n; i++ {
+			for i, n := 0, 3+int(qFrac*16)+int(c.Feed*5); i < n; i++ {
 				ed := e.edges[rng.Intn(len(e.edges))]
 				if ed.ny > 0 && rng.Float64() < 0.6 {
 					continue // the bow burns hardest
@@ -838,13 +874,15 @@ func (a *App) updatePlasma(c reentry.Controls) {
 			}
 		default:
 			// ionized: lock onto the dipole's field line and slide along
-			// it, ram pressure dragging the burning stream aft
+			// it, ram pressure dragging the burning stream aft. The lock
+			// is stiff and the downstream drag light, so the fire traces
+			// the lobes visibly before the wake claims it.
 			bx, by := dipoleB(p.x-cx, p.y-cy, mx, my)
 			if bl := math.Hypot(bx, by); bl > 1e-12 {
-				sp := 170 + 190*qFrac
-				tx, ty := bx/bl*sp, by/bl*sp+300
-				p.vx += (tx - p.vx) * math.Min(4*dt, 1)
-				p.vy += (ty - p.vy) * math.Min(4*dt, 1)
+				sp := 190 + 240*qFrac
+				tx, ty := bx/bl*sp, by/bl*sp+230
+				p.vx += (tx - p.vx) * math.Min(6.5*dt, 1)
+				p.vy += (ty - p.vy) * math.Min(6.5*dt, 1)
 			}
 			p.phase = math.Min(p.phase+dt*0.85, 1)
 		}
@@ -862,8 +900,8 @@ func (a *App) updatePlasma(c reentry.Controls) {
 		}
 	}
 	e.parts = live
-	if len(e.parts) > 900 {
-		e.parts = e.parts[len(e.parts)-900:]
+	if len(e.parts) > 2000 {
+		e.parts = e.parts[len(e.parts)-2000:]
 	}
 }
 
@@ -1127,15 +1165,22 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 		f := 1 - p.life/p.span
 		al := 0.75 * f * math.Min(p.life*6, 1)
 		if !p.bounced {
-			// neutral inflow: a motion streak out of the vanishing point
+			// neutral inflow: a long motion streak out of the vanishing
+			// point — the river of air falling onto the bow
 			fastLine(screen,
-				float32(p.x-p.vx*0.05), float32(p.y-p.vy*0.05),
+				float32(p.x-p.vx*0.09), float32(p.y-p.vy*0.09),
 				float32(p.x), float32(p.y),
-				float32(0.7+p.scale), plasmaRamp(p.phase), al*0.6)
+				float32(0.7+p.scale), plasmaRamp(p.phase), al*0.7)
 			continue
 		}
+		// ignited: a flame lick — a streak along the velocity with a hot
+		// core, so the deflected stream reads as fire, not confetti
 		r := float32((1.0 + 1.5*f) * p.scale)
-		fastDot(screen, float32(p.x), float32(p.y), r, plasmaRamp(p.phase), al)
+		col := plasmaRamp(p.phase)
+		fastLine(screen,
+			float32(p.x-p.vx*0.045), float32(p.y-p.vy*0.045),
+			float32(p.x), float32(p.y), r*1.1, col, al*0.7)
+		fastDot(screen, float32(p.x), float32(p.y), r*0.8, col, al)
 	}
 
 	// --- the mirror shell: the bright arc standing off ahead of the nose.
@@ -1246,6 +1291,8 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 	a.drawCorridorInset(screen)
 	a.drawILSSide(screen)
 	a.drawEntryHud(screen, hy) // the landing HUD flies the whole sequence
+	a.drawTrajProjection(screen, hy)
+	a.drawBurnWarnings(screen)
 
 	// deorbit plasma white-in
 	if e.flash > 0 {
@@ -1255,6 +1302,91 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 
 	if s.Status() != reentry.Flying {
 		a.drawEntryOutcome(screen)
+	}
+}
+
+// drawTrajProjection is the future, dotted in the HUD's green: Sim.Predict
+// flies the current stick sixty seconds ahead, and each sample is placed
+// at its true depression angle below the horizon (Δh over distance, on the
+// same 22 px/deg the horizon itself rides). The corridor is painted with
+// it — two dashed rails at the reference band's edges — so "fly the pipe"
+// stops being a sentence and becomes geometry: keep the dots between the
+// rails.
+func (a *App) drawTrajProjection(screen *ebiten.Image, hy float64) {
+	e, s := a.entry, a.entry.sim
+	if s.Status() != reentry.Flying || len(e.pred) == 0 || e.seamT() > 0.6 {
+		return
+	}
+	const pxPerDeg = 22.0
+	// the pipe's rails at the CURRENT reference: where the first dots
+	// should sit
+	for _, edge := range [2]float64{s.RefG - s.Width, s.RefG + s.Width} {
+		y := float32(hy + (-edge)*pxPerDeg)
+		for x := shipX - 70; x < shipX+70; x += 14 {
+			fastLine(screen, float32(x), y, float32(x+7), y, 1, hudGreen, 0.5)
+		}
+	}
+	ui.DrawText(screen, "PIPE", shipX+80, hy+(-s.RefG)*pxPerDeg-4, 0.6)
+	// the dots: the projected positions, red once they leave the band
+	for k, p := range e.pred {
+		dKm := (p.Downrange - s.Downrange) / 1000
+		if dKm < 0.5 {
+			continue
+		}
+		dropDeg := math.Atan2(s.H-p.H, dKm*1000) * 180 / math.Pi
+		y := hy + dropDeg*pxPerDeg
+		if y > gaugeTop-8 {
+			break
+		}
+		errW := (p.Gamma*180/math.Pi - s.RefGamma(p.H)) /
+			math.Max(s.CorridorWidth(p.H), 0.01)
+		col := hudGreen
+		if math.Abs(errW) > 1 {
+			col = colBad
+		}
+		f := float64(k) / float64(len(e.pred))
+		fastDot(screen, float32(shipX), float32(y), 2.4, col, 0.85*(1-0.45*f))
+		if k == len(e.pred)-1 {
+			vector.StrokeCircle(screen, float32(shipX), float32(y), 6, 1,
+				premul(col, 0.8), false)
+			ui.DrawText(screen, fmt.Sprintf("+%.0fs", p.T), shipX+12, y-4, 0.6)
+		}
+	}
+}
+
+// drawBurnWarnings is how the pilot LEARNS the pipe: the moment the hull
+// is actually being spent, the screen says so, says how fast, and says
+// which way to push. During the damage-control reflex the computer
+// announces that it has the stick.
+func (a *App) drawBurnWarnings(screen *ebiten.Image) {
+	e, s := a.entry, a.entry.sim
+	if s.Status() != reentry.Flying {
+		return
+	}
+	blink := 0.55 + 0.45*math.Abs(math.Sin(s.T*7))
+	center := func(txt string, y, scale float64, col color.RGBA, al float64) {
+		x := float64(ScreenW)/2 - float64(len(txt))*3.6*scale
+		ui.DrawTextScaled(screen, txt, x, y, scale, col, float32(al))
+	}
+	if s.Recovering() {
+		center("EMERGENCY OVERRIDE", 150, 2, colHeat, blink)
+		center("PULL UP! FLY THE PIPE!", 176, 2, colBad, blink)
+	}
+	if e.hullRate > 0.08 {
+		// the red edges close in as the burn rate climbs
+		edge := math.Min(0.10+e.hullRate*0.10, 0.4) * blink
+		vector.DrawFilledRect(screen, 0, 0, 26, gaugeTop, premul(colBad, edge), false)
+		vector.DrawFilledRect(screen, ScreenW-26, 0, 26, gaugeTop, premul(colBad, edge), false)
+		center(fmt.Sprintf("HULL BURNING  -%.1f%%/s", e.hullRate), 210, 2, colBad, blink)
+		err := s.GammaError()
+		cue := "FEED THE SHIELD  [ ]"
+		switch {
+		case err < -s.Width:
+			cue = "TOO STEEP — EASE THE NOSE UP"
+		case err > s.Width:
+			cue = "TOO SHALLOW — PUSH BACK DOWN"
+		}
+		center(cue, 238, 1, colHeat, blink)
 	}
 }
 
@@ -1390,7 +1522,7 @@ func (a *App) drawFieldLines(screen *ebiten.Image) {
 	mAng := e.bank*0.7 - e.roll*0.45
 	lobes := func(ang, alpha float64) {
 		sinm, cosm := math.Sin(ang), math.Cos(ang)
-		for _, L := range [3]float64{58, 82, 112} {
+		for _, L := range [4]float64{58, 82, 112, 146} {
 			for _, side := range [2]float64{-1, 1} {
 				var lx, ly float32
 				prev := false
@@ -1412,7 +1544,7 @@ func (a *App) drawFieldLines(screen *ebiten.Image) {
 			}
 		}
 	}
-	al := 0.10 + 0.22*auth
+	al := 0.12 + 0.26*auth
 	lobes(mAng, al)
 	if s.Boosting() {
 		lobes(mAng+math.Pi/2, al*0.6)
