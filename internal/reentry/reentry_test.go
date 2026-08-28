@@ -130,15 +130,40 @@ func TestAutolandAcrossProfiles(t *testing.T) {
 	}
 }
 
-// The in-game step is dt=0.1 (60 fps at 6x time): the flight computer must
-// fly the checkride cleanly at that rate too, across seeds.
+// The in-game step is dt=0.3 (60 fps at 18x time — the entry is not flown
+// in real time): the flight computer must fly the checkride cleanly at
+// that rate too, across seeds.
 func TestAutolandNominalAtGameRate(t *testing.T) {
 	for seed := int64(1); seed <= 6; seed++ {
 		s := New(Yodacon(), EarthProfile(), seed)
-		st := runToEndDt(s, Controls{Auto: true}, 2600, 0.1)
+		st := runToEndDt(s, Controls{Auto: true}, 2600, 0.3)
 		if st != Landed || s.Dmg.Hull > 20 {
 			t.Errorf("seed %d: %v hull %.1f%% computer %.0f%% (t=%.0f h=%.0f)",
 				seed, st, s.Dmg.Hull, s.Dmg.Computer, s.T, s.H)
 		}
+	}
+}
+
+// A hold stuffed to the 120% clamp limit must still be landable on the
+// computer — heavier, hotter, harder, but never a death sentence. The
+// same flight must also cost more RCS than the empty ship's: the weight
+// factor makes every correction dearer, which is the overstuff tradeoff.
+func TestOverstuffedStillLandsAndPaysForIt(t *testing.T) {
+	heavy := Yodacon()
+	heavy.Mass += 120e3 // 120 t of cargo, RefMass stays at design
+	hs := New(heavy, EarthProfile(), 1)
+	st := runToEnd(hs, Controls{Auto: true}, 2600)
+	if st != Landed || hs.Dmg.Hull > 40 {
+		t.Fatalf("overstuffed: %v hull %.1f%% (t=%.0f h=%.0f v=%.0f)",
+			st, hs.Dmg.Hull, hs.T, hs.H, hs.V)
+	}
+	ls := New(Yodacon(), EarthProfile(), 1)
+	runToEnd(ls, Controls{Auto: true}, 2600)
+	if hs.RCS >= ls.RCS {
+		t.Errorf("full weight must burn more RCS: heavy %.1f kg left, light %.1f",
+			hs.RCS, ls.RCS)
+	}
+	if heavy.WeightFactor() < 1.3 {
+		t.Errorf("weight factor should read the overstuff: %.2f", heavy.WeightFactor())
 	}
 }

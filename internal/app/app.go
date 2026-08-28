@@ -72,6 +72,7 @@ type App struct {
 	warp    *warpState
 	docking *dockingRequest
 	takeoff *takeoffState
+	fxlab   *fxlabState
 
 	// the engineering layer: one power grid under every mode
 	engPreset engPreset
@@ -145,7 +146,10 @@ func New() (*App, error) {
 	} else if boot != "" {
 		a.newGame("sundaydrive.xml")
 		if id := 0; a.running() {
-			if _, err := fmt.Sscanf(boot, "entry %d", &id); err == nil && id > 0 {
+			if boot == "fxlab" {
+				// the effects bench: no corridor, every input on a key
+				a.startFxLab()
+			} else if _, err := fmt.Sscanf(boot, "entry %d", &id); err == nil && id > 0 {
 				a.startEntry(id)
 				if a.entry != nil && strings.HasSuffix(boot, " auto") {
 					a.entry.auto = true
@@ -333,6 +337,8 @@ func (a *App) Update() error {
 		case modeTakeoff:
 			a.updateTakeoff()
 			a.updateFlightGrid() // climbing out: the plant is already banking
+		case modeFxLab:
+			a.updateFxLab()
 		default:
 			if a.Console.State == console.Hidden {
 				a.handlePlayerInput()
@@ -371,6 +377,9 @@ func (a *App) Draw(screen *ebiten.Image) {
 		screen.Fill(color.RGBA{2, 4, 8, 255})
 		a.stars.Draw(screen)
 		a.drawTakeoff(screen)
+	case a.running() && a.mode == modeFxLab && a.fxlab != nil:
+		screen.Fill(color.RGBA{5, 7, 10, 255})
+		a.drawFxLab(screen)
 	case a.running():
 		screen.Fill(color.RGBA{0, 0, 0, 255})
 		a.stars.Draw(screen)

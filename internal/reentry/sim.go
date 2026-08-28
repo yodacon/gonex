@@ -9,7 +9,8 @@ import (
 // from the recovered shïp 174 record (350 t, 80 m) mapped onto the envelope
 // model's vehicle knobs.
 type Vehicle struct {
-	Mass       float64 // kg
+	Mass       float64 // kg, as flown — cargo and outfits included
+	RefMass    float64 // kg, the design entry mass the trim tables assume
 	Diameter   float64 // m
 	NoseRadius float64 // m
 	LDMax      float64 // maximum commandable lift-to-drag, plasma phase
@@ -28,7 +29,7 @@ type Vehicle struct {
 // plasma aeroshell is what makes a 350 t freighter flyable at all.
 func Yodacon() Vehicle {
 	return Vehicle{
-		Mass: 350e3, Diameter: 40, NoseRadius: 12, LDMax: 0.35,
+		Mass: 350e3, RefMass: 350e3, Diameter: 40, NoseRadius: 12, LDMax: 0.35,
 		GlideLD:  1.0, // five by five: the wing shape glides 5:5
 		TPSLimit: 60e4, GLimit: 6, CoilField: 1.2, LiTank: 60,
 		RCSTank: 80, PowerCap: 4e6,
@@ -60,6 +61,22 @@ type Controls struct {
 }
 
 const maxFeed = 0.200 // kg/s at Feed=1
+
+// KarmanLine is the edge of space, in metres. The entry interface sits
+// above it (122 km); the corridor's work happens below it. The scene and
+// the HUD both key the world's wake-up to this altitude.
+const KarmanLine = 100000.0
+
+// WeightFactor is how far over (or under) the design entry mass the ship
+// is flying, ≥ ~1 at full load. Everything trimmed for RefMass — thruster
+// budgets, response — degrades by this ratio: an overstuffed freighter is
+// physically harder to hold on the needle.
+func (v Vehicle) WeightFactor() float64 {
+	if v.RefMass <= 0 {
+		return 1
+	}
+	return v.Mass / v.RefMass
+}
 
 // Status is where the entry stands.
 type Status int
@@ -260,10 +277,12 @@ func (s *Sim) Step(dt float64, c Controls) {
 	roll := math.Min(math.Max(c.Roll, -1), 1)
 
 	// RCS: every commanded degree costs propellant, triple when diving
-	// steep against thick air. An empty tank is a mushy stick — come in
-	// steep and the bottles are critical by the flare.
+	// steep against thick air, and scaled by the weight factor — the
+	// thrusters were sized for the design mass, so a full hold pays for
+	// every correction. An empty tank is a mushy stick — come in steep
+	// and the bottles are critical by the flare.
 	spend := (0.55*math.Abs(pitch) + 0.45*math.Abs(roll)) *
-		(0.5 + math.Min(qd/9000, 2.5)) * 0.12 *
+		(0.5 + math.Min(qd/9000, 2.5)) * 0.12 * s.Veh.WeightFactor() *
 		(0.3 + 0.7*math.Min(s.V/3000, 1)) // aero trim takes over low and slow
 	if s.GammaError() < -s.Width {
 		spend *= 2.2

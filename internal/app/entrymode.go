@@ -12,6 +12,7 @@ import (
 
 	"yodacon.org/gonex/assets"
 	"yodacon.org/gonex/internal/city"
+	"yodacon.org/gonex/internal/fx"
 	"yodacon.org/gonex/internal/power"
 	"yodacon.org/gonex/internal/reentry"
 	"yodacon.org/gonex/internal/ui"
@@ -40,7 +41,10 @@ func premul(c color.RGBA, a float64) color.RGBA {
 // Particle colors are the emission lines of the species in the shield
 // model; the reflective "one-way mirror" shell is the bright arc.
 
-const entryTimeScale = 12.0 // a ~10-minute entry plays in ~50 s
+// The corridor is not flown in real time: a ~10-minute entry plays in
+// about half a minute. The sim's RK4 is stable well past this step
+// (reentry_test covers the exact game rate).
+const entryTimeScale = 18.0
 
 // Emission-line palette (Li 670.8 nm, N2 first positive, O I 557.7 nm).
 var (
@@ -77,7 +81,7 @@ type groundDot struct {
 }
 
 type trailPt struct {
-	dr, h float64 // m downrange, m altitude
+	dr, h, v float64 // m downrange, m altitude, m/s velocity
 }
 
 // shockPuff is one pressure ring leaving a hull station — the X-59
@@ -142,6 +146,18 @@ type entryState struct {
 	shieldImg *ebiten.Image // the expanded-mask shield band
 	nebula    []nebBlob     // the high sky
 	port      *city.Port    // the landing site, grown from the stellar seed
+
+	// the two bow waves, both fire grids bent onto their own arcs: the
+	// plasma sheath burning on the standoff shell (hypersonic phase), and
+	// the white condensation cloud on the Mach cone (aero phase)
+	bowFire   *fx.Fire
+	machCloud *fx.Fire
+
+	// expected is the reference profile: the same seed's autoland, flown
+	// headless at entry start — the h–V line the corridor monitor plots
+	// the live trace against, exactly the console prototype's h–V plane
+	expected     []trailPt
+	karmanCalled bool // the 100 km callout, made once on the way down
 }
 
 // The plasma ramp: the sheath read as layers, front to wake — blue at the
@@ -273,7 +289,7 @@ func (a *App) startEntry(stellarID int) {
 		CorridorHalfWidth: st.Landing.CorridorHalfWidth,
 		PadBonus:          st.Landing.PadBonus,
 	}
-	veh := reentry.Yodacon()
+	veh := entryVehicleFor(a.Catalog.Get(a.Cfg.PlayerShipID))
 	veh.LiTank = a.voy.Lithium
 	veh.RCSTank = a.voy.RCSFuel
 	if a.voy.Grid != nil {
@@ -281,10 +297,20 @@ func (a *App) startEntry(stellarID int) {
 		// battery bought raises the ballistic coefficient right here
 		veh.Mass += a.voy.Grid.OutfitKg
 	}
-	sim := reentry.New(veh, prof, a.voy.Rng.Int63())
+	// so does the hold: every ton on the commodity board rides the
+	// corridor down. RefMass stays at the design figure, so a full (or
+	// overstuffed) deck reads on the LOAD dial and stiffens the stick.
+	veh.Mass += float64(a.voy.CargoTotal()) * 1000
+	seed := a.voy.Rng.Int63()
+	sim := reentry.New(veh, prof, seed)
 	sim.Dmg = a.voy.Dmg // damage carries in from the life you've led
 	e := &entryState{sim: sim, stellar: stellarID, feed: 0.1, boomT: -1,
-		finalT: -1, appRange: -1}
+		finalT: -1, appRange: -1,
+		bowFire:   fx.NewFire(44, 13, seed),
+		machCloud: fx.NewFire(36, 9, seed+1),
+		expected:  flyExpected(veh, prof, seed),
+	}
+	e.machCloud.Cooling = 0.988 // condensation lingers; plasma doesn't
 	for i := 0; i < 110; i++ {
 		e.ground = append(e.ground, groundDot{
 			lat:   (a.voy.Rng.Float64() - 0.5) * 56,
@@ -320,6 +346,23 @@ func (a *App) startEntry(stellarID int) {
 	a.miniMapWin.Visible, a.hudWin.Visible, a.targetWin.Visible = false, false, false
 	a.fullMapWin.Visible, a.galaxyWin.Visible = false, false
 	a.Console.Notifyf("ENTRY INTERFACE — %s. Fly the needle.", st.Name)
+}
+
+// flyExpected flies the whole entry headless on the flight computer before
+// the player touches the stick: same vehicle, same profile, same seed. The
+// result is the expected h–V profile — the corridor monitor's reference
+// line, and the honest answer to "what should this descent look like".
+func flyExpected(veh reentry.Vehicle, prof reentry.Profile, seed int64) []trailPt {
+	s := reentry.New(veh, prof, seed)
+	c := reentry.Controls{Auto: true}
+	out := []trailPt{{dr: s.Downrange, h: s.H, v: s.V}}
+	for i := 0; s.Status() == reentry.Flying && i < 16000; i++ {
+		s.Step(0.2, c)
+		if i%12 == 0 {
+			out = append(out, trailPt{dr: s.Downrange, h: s.H, v: s.V})
+		}
+	}
+	return out
 }
 
 func (a *App) updateEntry() {
@@ -412,7 +455,13 @@ func (a *App) updateEntry() {
 
 		// the approach inset's memory: one fix every few seconds
 		if n := len(e.trail); n == 0 || s.T-float64(n)*3 > 0 {
-			e.trail = append(e.trail, trailPt{dr: s.Downrange, h: s.H})
+			e.trail = append(e.trail, trailPt{dr: s.Downrange, h: s.H, v: s.V})
+		}
+
+		// the edge of space, called once on the way through
+		if !e.karmanCalled && s.H < reentry.KarmanLine {
+			e.karmanCalled = true
+			a.Console.Notifyf("KARMAN LINE — 100 km. The world is coming up to meet you.")
 		}
 
 		// the speed reference: once the port is over the horizon its
@@ -635,6 +684,34 @@ func (a *App) updatePlasma(c reentry.Controls) {
 	mAng := e.bank*0.7 - e.roll*0.45
 	mx, my := math.Sin(mAng), -math.Cos(mAng) // nose = north, up-screen
 
+	// --- the two bow waves, each a fire grid bent onto its own arc.
+	// The plasma fire eats sheath heat and lithium feed; its front leans
+	// with the steering lobe, so rolling visibly drags the flame around
+	// the shell the way the deflected stream actually goes.
+	lobeV, rollAbs := lobe, math.Abs(e.roll)
+	// FeedUsed is the lithium actually going in this frame — the
+	// autoland's and the guardian's feed burn on the bow like the pilot's
+	e.bowFire.Fuel = math.Min(qFrac*2.0+s.FeedUsed/0.2*0.45, 1.35) * s.Pt.Gate
+	e.bowFire.Sweep = -e.roll * 2.4
+	e.bowFire.FuelProfile = func(u float64) float64 {
+		base := 1 - 0.45*u*u // stagnation-line weighted
+		return base * (1 + 0.9*math.Max(0, lobeV*u)*rollAbs)
+	}
+	if c.Burst {
+		e.bowFire.Boost(0.5)
+	}
+	if s.Boosting() {
+		e.bowFire.Boost(0.06)
+	}
+	e.bowFire.Step(dt)
+	// the Mach-speed bow wave: white condensation, volumetric, owned by
+	// the aero phase — it condenses where the air is dense and the ship
+	// is supersonic, and takes over exactly as the plasma lets go
+	e.machCloud.Fuel = s.AeroAuth *
+		math.Min(math.Max((s.Pt.Mach-0.85)/0.4, 0), 1)
+	e.machCloud.Sweep = -e.roll * 1.4
+	e.machCloud.Step(dt)
+
 	rng := a.voy.Rng
 	if s.V > 900 {
 		// 1) inflow from the horizon: faint neutral streaks out of the
@@ -844,24 +921,20 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 	sun := sunAt(e.dayPhase0 + s.T*0.0006)
 	a.drawSky(screen, hkm, hy, e.bank, shipX, sun, e.nebula)
 
-	// --- the limb: a curved arc, flattening as we descend
+	// --- the limb: a curved arc, flattening as we descend. From orbit the
+	// horizon itself is BLACK — the line you see is the thin blue
+	// atmosphere BENEATH it, the classic edge-on airglow band. The world's
+	// green horizon only takes over once the ship is down in the air.
 	curve := 500 + (hkm/122)*-0 + (1-hkm/122)*11000 // px radius: 500 high → 11500 low
-	prev := false
-	var lx, ly float32
-	for x := -60.0; x <= float64(ScreenW)+60; x += 24 {
-		dx := x - shipX
-		y := hy + dx*dx/(2*curve)
-		px, py := e.rot(x, y)
-		if prev {
-			vector.StrokeLine(screen, lx, ly, px, py, 2,
-				premul(color.RGBA{29, 122, 36, 255}, 0.85), false)
-		}
-		lx, ly, prev = px, py, true
-	}
-
-	// --- ground: opaque bands from the limb down to the panel, waking up
-	// into daylight terrain as the deck closes
-	day := (1 + 2.4*math.Min(math.Max((30-hkm)/30, 0), 1)) * (0.35 + 0.65*sun)
+	wake := fadeInLog(hkm, reentry.KarmanLine/1000) // the world coming into view
+	limbCol := color.RGBA{
+		uint8(110 + (29-110)*wake), uint8(170 + (122-170)*wake),
+		uint8(255 + (36-255)*wake), 255}
+	// --- ground: opaque bands from the limb down to the panel — near
+	// BLACK above the Kármán line, waking into terrain as the world comes
+	// into view, then into daylight as the deck closes
+	day := (1 + 2.4*math.Min(math.Max((30-hkm)/30, 0), 1)) * (0.35 + 0.65*sun) *
+		(0.12 + 0.88*wake)
 	for i := 0; i < 14; i++ {
 		d := 20 + 38*float64(i)
 		bx1, by1 := e.rot(-320, hy+d)
@@ -878,11 +951,52 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 		fastRect(screen, 0, float32(hy), ScreenW, float32(float64(ScreenH)-hy),
 			color.RGBA{uint8(28 + 40*dayn), uint8(24 + 32*dayn), uint8(18 + 24*dayn), 255}, tF)
 	}
-	groundVis := math.Min(math.Max((62-hkm)/45, 0), 1)
+	// --- the atmosphere seen edge-on: the blue band BENEATH the black
+	// horizon — layered arcs sinking into the dark planet, brightest right
+	// under the limb, strongest from orbit, over the ground bands so the
+	// planet cannot swallow it
+	glowA := 0.6 * math.Min(math.Max((hkm-15)/50, 0.2), 1) * (1 - tF)
+	var lx, ly float32
+	for li, band := range [4]struct {
+		off float64
+		c   color.RGBA
+		al  float64
+	}{
+		{3, color.RGBA{132, 190, 255, 255}, 1.0},
+		{8, color.RGBA{74, 138, 245, 255}, 0.72},
+		{15, color.RGBA{38, 84, 190, 255}, 0.46},
+		{24, color.RGBA{18, 42, 120, 255}, 0.26},
+	} {
+		prevB := false
+		var blx, bly float32
+		for x := -60.0; x <= float64(ScreenW)+60; x += 24 {
+			dx := x - shipX
+			y := hy + dx*dx/(2*curve) + band.off
+			px, py := e.rot(x, y)
+			if prevB {
+				vector.StrokeLine(screen, blx, bly, px, py, float32(4+li*3),
+					premul(band.c, band.al*glowA), false)
+			}
+			blx, bly, prevB = px, py, true
+		}
+	}
+	// the limb line itself: blue-white from orbit, the world's green low
+	prev := false
+	for x := -60.0; x <= float64(ScreenW)+60; x += 24 {
+		dx := x - shipX
+		y := hy + dx*dx/(2*curve)
+		px, py := e.rot(x, y)
+		if prev {
+			vector.StrokeLine(screen, lx, ly, px, py, 2,
+				premul(limbCol, 0.35+0.5*wake), false)
+		}
+		lx, ly, prev = px, py, true
+	}
+	groundVis := math.Min(math.Max((105-hkm)/50, 0), 1)
 	if groundVis > 0 {
 		// shore patterns: a procedural coastline wanders across the track,
 		// resolving out of the haze a couple of decades up
-		if sv := fadeInLog(hkm, 60) * groundVis * (1 - tF); sv > 0.02 {
+		if sv := fadeInLog(hkm, 72) * groundVis * (1 - tF); sv > 0.02 {
 			dr := s.Downrange / 1000
 			shorePrev := false
 			var sx, sy float32
@@ -906,7 +1020,10 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 		// that twinkles and brightens as the decades fall away — small
 		// towns, CONNECTED: a faint highway runs to the next town in the
 		// row, so from altitude the surface reads as a settled network
-		if cv := fadeInLog(hkm, 45) * groundVis * (0.55 + 0.75*(1-sun)) * (1 - tF); cv > 0.02 {
+		// the settled network is the FIRST thing the world shows: city
+		// lights read from orbit, so they lead the wake-up at the Kármán
+		// line — brightest on the night side, exactly like the real view
+		if cv := fadeInLog(hkm, 95) * groundVis * (0.55 + 0.75*(1-sun)) * (1 - tF); cv > 0.02 {
 			dr := s.Downrange / 1000
 			c0 := int(dr) / 8
 			var lastX, lastY [7]float32
@@ -1029,6 +1146,12 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 	auth := math.Min(s.Pt.InteractionQ, 1)
 	rx0 := 40 + standPx*0.85
 	lobe := -e.roll
+	// the plasma bow wave proper: the fire grid bent along the shell,
+	// burning UNDER the mirror line — the sheath the ship pushes ahead
+	drawBowFire(screen, e.bowFire, bowGeom{
+		cx: shipX - e.bank*30, nose: nose, standPx: standPx,
+		roll: e.roll, alpha: 0.5 + 0.5*math.Min(qFrac*2, 1),
+	})
 	prev = false
 	for i := 0; i <= 22; i++ {
 		ang := -1.25 + 2.5*float64(i)/22
@@ -1109,11 +1232,18 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 		screen.DrawImage(e.shieldImg, op)
 	}
 
+	// --- the Mach-speed bow wave: the white condensation collar, owned by
+	// the aero phase. It condenses in over the hull exactly as the plasma
+	// fire dies — the visible form of the STEER handoff.
+	drawMachCloud(screen, e.machCloud, shipX-e.bank*30, float64(shipDrawY)-14,
+		s.Pt.Mach, s.AeroAuth)
+
 	a.drawBoom(screen)
 	a.drawEntryGauges(screen)
 	a.drawEntryStrip(screen)
 	a.drawEntryDials(screen)
 	a.drawOrbitInset(screen)
+	a.drawCorridorInset(screen)
 	a.drawILSSide(screen)
 	a.drawEntryHud(screen, hy) // the landing HUD flies the whole sequence
 
@@ -1192,20 +1322,25 @@ func (a *App) drawSky(screen *ebiten.Image, hkm, hy, bank, pivotX, sun float64, 
 	img := a.skyImg
 	img.Clear()
 
-	space := math.Min(math.Max((hkm-25)/55, 0), 1)
+	// The dome stays BLACK through the whole corridor: at interface the
+	// horizon is a black line over a blue limb, and only below ~50 km does
+	// the air start claiming the sky, filling to powder blue by 15.
+	space := math.Min(math.Max((hkm-15)/35, 0), 1)
 	lowness := 1 - space
 	sunF := 0.30 + 0.70*sun
 	hue := color.RGBA{
 		uint8((70 + 80*lowness) * sunF),
 		uint8((130 + 60*lowness) * sunF),
 		uint8((150 + 85*lowness) * math.Min(sunF+0.1, 1)), 255}
-	const nbands = 26
+	const nbands = 64
 	bandH := float64(skyH) / nbands
 	for i := 0; i < nbands; i++ {
 		f := (float64(i) + 0.5) / nbands // 0 zenith → 1 at the limb ahead
+		// in full space the dome itself carries almost nothing — a faint
+		// airglow at the limb is all; the air only claims the sky low down
 		k := math.Pow(f, 1+2.2*space)
 		vector.DrawFilledRect(img, 0, float32(math.Floor(bandH*float64(i))),
-			skyW, float32(bandH+1), premul(hue, 0.85*k), false)
+			skyW, float32(bandH+1), premul(hue, 0.85*k*(0.18+0.82*lowness)), false)
 	}
 	// the horizon haze: the palest band, sitting right on the limb so the
 	// sky's edge and the world's edge are the same line
@@ -1400,6 +1535,69 @@ func (a *App) drawOrbitInset(screen *ebiten.Image) {
 	ui.DrawText(screen, "alt ×6 exaggerated", x0+8, y0+h-16, 0.5)
 }
 
+// drawCorridorInset is the console prototype's "Entry corridor" card made
+// live: the classic h–V plane, with the EXPECTED profile (this seed's
+// autoland, flown headless at interface) as the reference line, the flown
+// trace burning over it, and the Kármán line marked where the world wakes
+// up. One glance answers "am I on the profile" in the plot's own terms
+// instead of the needle's.
+func (a *App) drawCorridorInset(screen *ebiten.Image) {
+	e, s := a.entry, a.entry.sim
+	x0, y0, w, h := 20.0, 76.0, 196.0, 150.0
+	vector.DrawFilledRect(screen, float32(x0), float32(y0), float32(w), float32(h),
+		premul(color.RGBA{5, 7, 10, 255}, 0.6), false)
+	vector.StrokeRect(screen, float32(x0), float32(y0), float32(w), float32(h), 1,
+		premul(colRule, 0.9), false)
+	ui.DrawText(screen, "EXPECTED PROFILE  h-V", x0+8, y0+6, 0.6)
+
+	vmax := 1000.0
+	for _, p := range e.expected {
+		if p.v > vmax {
+			vmax = p.v
+		}
+	}
+	if s.V > vmax {
+		vmax = s.V
+	}
+	px := func(v float64) float32 { return float32(x0 + 10 + v/vmax*(w-20)) }
+	py := func(hm float64) float32 {
+		f := math.Min(math.Max(hm/122000, 0), 1)
+		return float32(y0 + h - 12 - f*(h-34))
+	}
+	// the Kármán line: dashes across the plot at 100 km
+	ky := py(reentry.KarmanLine)
+	for x := x0 + 10; x < x0+w-14; x += 12 {
+		vector.StrokeLine(screen, float32(x), ky, float32(x+6), ky, 1,
+			premul(colEM, 0.45), false)
+	}
+	ui.DrawText(screen, "KARMAN 100", x0+w-78, float64(ky)-11, 0.5)
+	// the expected profile: the reference line the computer would fly
+	var lx, ly float32
+	for i, p := range e.expected {
+		nx, ny := px(p.v), py(p.h)
+		if i > 0 {
+			vector.StrokeLine(screen, lx, ly, nx, ny, 1.5,
+				premul(colDim, 0.85), false)
+		}
+		lx, ly = nx, ny
+	}
+	// the flown trace, shaded like the prototype's q̇-colored trajectory
+	for i := 1; i < len(e.trail); i++ {
+		f := float64(i) / float64(len(e.trail))
+		vector.StrokeLine(screen,
+			px(e.trail[i-1].v), py(e.trail[i-1].h),
+			px(e.trail[i].v), py(e.trail[i].h), 1.5,
+			premul(colHeat, 0.35+0.6*f), false)
+	}
+	// the ship now: chrome dot, red when the needle is out of the band
+	dc := colChrome
+	if math.Abs(s.GammaError()) > s.Width {
+		dc = colBad
+	}
+	vector.DrawFilledCircle(screen, px(s.V), py(s.H), 3, dc, false)
+	ui.DrawText(screen, "km/s →", x0+w-52, y0+h-11, 0.5)
+}
+
 // drawEntryDials is the cockpit cluster riding above the panel: the main
 // screen keeps the reentry visualization, the dials keep the numbers.
 func (a *App) drawEntryDials(screen *ebiten.Image) {
@@ -1414,17 +1612,32 @@ func (a *App) drawEntryDials(screen *ebiten.Image) {
 	if gd := a.voy.Grid; gd != nil {
 		battPct = gd.BattFrac() * 100
 	}
+	// Every scale is TUNED TO THIS SHIP: the ranges fall out of the
+	// vehicle the yard sold you, not out of the panel's paint.
+	//   - the g dial ends at 2.5× this hull's structural limit;
+	//   - the wall dial's red line is the radiative-equilibrium wall
+	//     temperature at this hull's own TPS flux limit, T = (q/σε)^¼;
+	//   - the Mach dial ends just past this world's entry speed;
+	//   - the standoff dial's reach scales with the coil actually fitted;
+	//   - the LOAD dial reads the flown mass against the design mass —
+	//     past 100% is the overstuffed hold, and the stick knows it.
+	gMax := s.Veh.GLimit * 2.5
+	wallRed := math.Pow(s.Veh.TPSLimit/(5.67e-8*0.85), 0.25)
+	machMax := 8350 * math.Sqrt(s.Prof.GravityScale) / 280
+	standMax := 1 + 2*s.Veh.CoilField/1.2
+	loadPct := s.Veh.WeightFactor() * 100
 	type def struct {
 		label, val          string
 		v, min, max, r0, r1 float64
 	}
 	defs := []def{
-		{"G-LOAD", fmt.Sprintf("%.1f", s.Pt.GLoad), s.Pt.GLoad, 0, 15, s.Veh.GLimit, 15},
+		{"G-LOAD", fmt.Sprintf("%.1f", s.Pt.GLoad), s.Pt.GLoad, 0, gMax, s.Veh.GLimit, gMax},
 		{"FLUX/LIM", fmt.Sprintf("%.0f%%", s.Pt.QShielded/s.Veh.TPSLimit*100),
 			s.Pt.QShielded / s.Veh.TPSLimit * 100, 0, 160, 100, 160},
-		{"WALL K", fmt.Sprintf("%.0f", s.Pt.WallTemp), s.Pt.WallTemp, 0, 2600, 1900, 2600},
-		{"MACH", fmt.Sprintf("%.1f", s.Pt.Mach), s.Pt.Mach, 0, 30, 27, 30},
-		{"STANDOFF", fmt.Sprintf("%.2f", s.Pt.Standoff), s.Pt.Standoff, 1, 3, 1, 1.12},
+		{"WALL K", fmt.Sprintf("%.0f", s.Pt.WallTemp), s.Pt.WallTemp, 0, wallRed * 1.35, wallRed, wallRed * 1.35},
+		{"MACH", fmt.Sprintf("%.1f", s.Pt.Mach), s.Pt.Mach, 0, machMax, machMax * 0.9, machMax},
+		{"STANDOFF", fmt.Sprintf("%.2f", s.Pt.Standoff), s.Pt.Standoff, 1, standMax, 1, 1.12},
+		{"LOAD", fmt.Sprintf("%.0f%%", loadPct), loadPct, 0, 150, 100, 150},
 		{"RCS", fmt.Sprintf("%.0f%%", s.RCS/s.Veh.RCSTank*100),
 			s.RCS / math.Max(s.Veh.RCSTank, 1) * 100, 0, 100, 0, 12},
 		{"HULL SOAK", fmt.Sprintf("%.0f%%", s.Dmg.Hull), s.Dmg.Hull, 0, 100, 85, 100},

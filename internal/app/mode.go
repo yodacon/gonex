@@ -25,6 +25,7 @@ const (
 	modeLanded
 	modeDead
 	modeTakeoff
+	modeFxLab
 )
 
 func (m appMode) String() string {
@@ -41,6 +42,8 @@ func (m appMode) String() string {
 		return "DED"
 	case modeTakeoff:
 		return "ASCENT"
+	case modeFxLab:
+		return "FXLAB"
 	}
 	return "FLIGHT"
 }

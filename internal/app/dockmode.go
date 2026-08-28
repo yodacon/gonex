@@ -49,8 +49,13 @@ type dockState struct {
 }
 
 const (
-	cargoCap   = 100 // tons of deck cargo the Yodacon spares for trade
-	maxEscorts = 4
+	cargoCap = 100 // tons of deck cargo the Yodacon spares for trade
+	// the clamps will take 20% past the book figure — an overstuffed hold
+	// is legal at the dock and charged for by the atmosphere: every ton
+	// rides the corridor down as entry mass, and past 100% the LOAD dial
+	// sits in the red and the stick goes heavy
+	overstuffCap = cargoCap * 6 / 5
+	maxEscorts   = 4
 )
 
 // shipPrice is the yard's bluebook: a hull appraised off its flight spec.
@@ -265,7 +270,7 @@ func (a *App) updateDock() {
 			qty = 10
 		}
 		if inpututil.IsKeyJustPressed(ebiten.KeyEqual) {
-			for i := 0; i < qty && v.Credits >= price && v.CargoTotal() < cargoCap; i++ {
+			for i := 0; i < qty && v.Credits >= price && v.CargoTotal() < overstuffCap; i++ {
 				v.Credits -= price
 				v.Cargo[d.tradeSel]++
 			}
@@ -413,6 +418,10 @@ func (a *App) drawDock(screen *ebiten.Image) {
 	ui.DrawText(screen, fmt.Sprintf("%s · tech %d · day %d", st.Govt, st.Tech, v.Day), x, y+20, 0.8)
 	ui.DrawText(screen, fmt.Sprintf("credits %d · fuel %d/%d · li %.1f kg · rcs %.0f kg · hull %.0f%% · cargo %d/%d t · crew %d · escorts %d",
 		v.Credits, v.Fuel, v.FuelMax, v.Lithium, v.RCSFuel, 100-v.Dmg.Hull, v.CargoTotal(), cargoCap, v.Crew, len(v.Escorts)), x, y+40, 0.8)
+	if over := v.CargoTotal() - cargoCap; over > 0 {
+		ui.DrawTextScaled(screen, fmt.Sprintf("OVERSTUFFED %d%% — the corridor charges by the ton", 100*v.CargoTotal()/cargoCap),
+			x, y+56, 1, color.RGBA{255, 193, 77, 255}, 0.9)
+	}
 
 	switch d.view {
 	case dockBar:
@@ -485,7 +494,8 @@ func (a *App) drawDock(screen *ebiten.Image) {
 		a.drawMissionChart(screen, st.System, chartDest, 620, y+120, 344, 330)
 	case dockTrade:
 		ui.DrawText(screen, "COMMODITY BOARD — Up/Down select · + buys · - sells (Shift ×10) · T leaves", x, y+90, 1)
-		ui.DrawText(screen, fmt.Sprintf("hold %d/%d t · prices differ by station — haul low to high", v.CargoTotal(), cargoCap), x, y+110, 0.7)
+		ui.DrawText(screen, fmt.Sprintf("hold %d/%d t (clamps take %d) · prices differ by station — haul low to high",
+			v.CargoTotal(), cargoCap, overstuffCap), x, y+110, 0.7)
 		yy := y + 140
 		ui.DrawText(screen, "   COMMODITY        PRICE  TREND   ABOARD", x, yy, 0.7)
 		yy += 22
