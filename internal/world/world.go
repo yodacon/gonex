@@ -69,6 +69,13 @@ type World struct {
 	Rand    *rand.Rand
 	// Notify surfaces game events (kills, team changes) to the UI layer.
 	Notify func(format string, args ...any)
+
+	// ShieldFilter, when set, lets the app's power grid eat a hit before
+	// the main player's hull does; it returns the damage that gets through.
+	ShieldFilter func(dmg int) int
+	// FireGate, when set, is asked before the main player's gun fires — the
+	// app spends capacitor charge there, and a dry bank refuses the shot.
+	FireGate func() bool
 }
 
 func New(catalog *ship.Catalog, seed int64) *World {

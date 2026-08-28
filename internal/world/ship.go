@@ -40,9 +40,10 @@ type Ship struct {
 	Deaths int
 	Crew   int
 
-	Autotarget bool
-	Target     *Ship
-	Controller Controller
+	Autotarget  bool
+	Target      *Ship
+	Controller  Controller
+	ThrustScale float64 // 0 means stock; the app's power presets set it
 
 	fireCD     float64
 	rechargeCD float64
@@ -83,6 +84,9 @@ func (s *Ship) TurnRight(w *World, dt float64) {
 
 func (s *Ship) Thrust(w *World, dt float64) {
 	accel := w.Catalog.Get(s.ShipID).Acceleration
+	if s.ThrustScale > 0 {
+		accel *= s.ThrustScale // the engineering preset's engine share
+	}
 	s.V = s.V.Add(gmath.HeadingVec(s.Heading).Scale(accel * dt))
 }
 
@@ -95,12 +99,16 @@ func (s *Ship) Slow(dt float64) {
 	s.V = s.V.Scale(1 / (1 + dt))
 }
 
-func (s *Ship) Fire(w *World) {
+func (s *Ship) Fire(w *World) bool {
 	if s.fireCD > 0 {
-		return
+		return false
+	}
+	if s == w.MainPlayer && w.FireGate != nil && !w.FireGate() {
+		return false
 	}
 	s.fireCD = fireCooldown
 	w.SpawnMissile(s)
+	return true
 }
 
 // FaceToward turns the ship toward a point, snapping when a frame's turn would
@@ -175,7 +183,11 @@ func (s *Ship) HitByMissile(w *World, m *Missile) {
 	if s == w.MainPlayer && w.GodMode {
 		return
 	}
-	s.Health -= m.Damage
+	dmg := m.Damage
+	if s == w.MainPlayer && w.ShieldFilter != nil {
+		dmg = w.ShieldFilter(dmg)
+	}
+	s.Health -= dmg
 	if s.Health > 0 {
 		return
 	}

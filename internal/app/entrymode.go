@@ -9,6 +9,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 
+	"yodacon.org/gonex/internal/power"
 	"yodacon.org/gonex/internal/reentry"
 	"yodacon.org/gonex/internal/ui"
 )
@@ -97,6 +98,11 @@ func (a *App) startEntry(stellarID int) {
 	}
 	veh := reentry.Yodacon()
 	veh.LiTank = a.voy.Lithium
+	if a.voy.Grid != nil {
+		// the outfitter's mass comes home to roost: every generator and
+		// battery bought raises the ballistic coefficient right here
+		veh.Mass += a.voy.Grid.OutfitKg
+	}
 	sim := reentry.New(veh, prof, a.voy.Rng.Int63())
 	sim.Dmg = a.voy.Dmg // damage carries in from the life you've led
 	e := &entryState{sim: sim, stellar: stellarID, feed: 0.1}
@@ -146,6 +152,30 @@ func (a *App) updateEntry() {
 		c.Boost = inpututil.IsKeyJustPressed(ebiten.KeyB)
 		c.Burst = inpututil.IsKeyJustPressed(ebiten.KeySpace)
 		c.Auto = e.auto
+
+		// the grid runs the coil: entry drains the deep store while the
+		// radiators fly blind inside the sheath. An overdrive is a
+		// capacitor transaction; an empty battery is a bare-body descent.
+		if gd := a.voy.Grid; gd != nil {
+			if c.Boost && gd.SpendCap(boostCapMJ) < 1 {
+				c.Boost = false
+				a.engNotify("Coil overdrive refused — capacitors dry.")
+			}
+			fl := gd.Step(dt*entryTimeScale, power.Load{
+				Coil:   s.Pt.PowerDraw / 1e6,
+				Hotel:  0.3,
+				HeatMW: 1.2 * s.Pt.QShielded / s.Veh.TPSLimit,
+			})
+			s.Supply = fl.Served
+			if fl.Overheat > 0 {
+				s.Dmg.Computer = math.Min(
+					s.Dmg.Computer+3*fl.Overheat*dt*entryTimeScale, 100)
+			}
+			a.engNoteCD = math.Max(a.engNoteCD-dt, 0)
+			if fl.FromBatt > 0 && gd.BattMJ <= 0 {
+				a.engNotify("BATTERY FLAT — coil authority collapsing.")
+			}
+		}
 		s.Step(dt*entryTimeScale, c)
 		a.voy.Lithium = s.Li
 
@@ -495,17 +525,29 @@ func (a *App) drawEntryGauges(screen *ebiten.Image) {
 	vector.DrawFilledCircle(screen, float32(mid+cs*nw/2), float32(py+124), 4, colN2, false)
 	ui.DrawText(screen, fmt.Sprintf("CROSSRANGE %+.1f km", s.Crossrange), nx, py+134, 0.8)
 
-	// right: budgets
+	// right: budgets — the grid's ledger rides next to the lithium's
 	bx := 640.0
 	feedShow := e.feed
 	if e.auto {
 		feedShow = s.FeedUsed / 0.2
 	}
 	hbar(screen, bx, py+30, 180, feedShow, colLi, fmt.Sprintf("LI FEED %3.0f g/s  [ ]", s.FeedUsed*1000))
-	hbar(screen, bx, py+66, 180, s.Li/s.Veh.LiTank, colLi, fmt.Sprintf("LI RESERVE %.1f kg", s.Li))
-	hbar(screen, bx, py+102, 180, s.Pt.PowerDraw/s.Veh.PowerCap, colOI,
-		fmt.Sprintf("POWER %.1f / %.1f MW", s.Pt.PowerDraw/1e6, s.Veh.PowerCap/1e6))
-	hbar(screen, bx, py+138, 180, 1-s.Dmg.Hull/100, colPhos, fmt.Sprintf("HULL %3.0f%%", 100-s.Dmg.Hull))
+	hbar(screen, bx, py+60, 180, s.Li/s.Veh.LiTank, colLi, fmt.Sprintf("LI RESERVE %.1f kg", s.Li))
+	if gd := a.voy.Grid; gd != nil {
+		battCol := colOI
+		if gd.BattFrac() < 0.15 {
+			battCol = colBad
+		}
+		hbar(screen, bx, py+90, 180, gd.BattFrac(), battCol,
+			fmt.Sprintf("BATT %3.0f%% · draw %.1f MW", gd.BattFrac()*100, s.Pt.PowerDraw/1e6))
+		heatCol := colHeat
+		if gd.HeatFrac() > 1 {
+			heatCol = colBad
+		}
+		hbar(screen, bx, py+120, 180, gd.HeatFrac(), heatCol,
+			fmt.Sprintf("HEAT %3.0f%% (radiators blind)", gd.HeatFrac()*100))
+	}
+	hbar(screen, bx, py+150, 180, 1-s.Dmg.Hull/100, colPhos, fmt.Sprintf("HULL %3.0f%%", 100-s.Dmg.Hull))
 
 	// far right: auto lamp, boost, skip warning
 	ax := 850.0

@@ -42,6 +42,12 @@ func (a *App) handlePlayerInput() {
 		p.Autotarget = !p.Autotarget
 	}
 
+	// the engineer's key: cycle the power allocation preset
+	if inpututil.IsKeyJustPressed(ebiten.KeyE) {
+		a.engPreset = (a.engPreset + 1) % presetCount
+		a.Console.Notifyf("ENGINEERING: %s", a.engPreset)
+	}
+
 	// the trader's keys: chart, jump, land
 	if inpututil.IsKeyJustPressed(ebiten.KeyM) {
 		a.toggleWindow(a.galaxyWin)

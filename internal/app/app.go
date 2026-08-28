@@ -72,6 +72,10 @@ type App struct {
 	warp    *warpState
 	docking *dockingRequest
 
+	// the engineering layer: one power grid under every mode
+	engPreset engPreset
+	engNoteCD float64
+
 	background *ebiten.Image
 	started    time.Time
 	quitting   bool
@@ -202,6 +206,7 @@ func (a *App) newGame(scenePath string) {
 	a.World = w
 	a.mode = modeFlight
 	a.voy = newVoyage(time.Now().UnixNano())
+	a.wireGrid()
 	a.enterSystem(a.voy.System)
 	a.setGameStatus(true)
 	a.Console.Printf("GAME: Scene loaded successfully %s", scenePath)
@@ -276,6 +281,7 @@ func (a *App) Update() error {
 		switch a.mode {
 		case modeWarp:
 			a.updateWarp()
+			a.updateFlightGrid() // the tunnel is still vacuum: stores refill
 		case modeDeorbit:
 			a.updateDeorbit()
 		case modeEntry:
@@ -292,6 +298,7 @@ func (a *App) Update() error {
 			}
 			a.updateDemo()
 			a.updateDocking()
+			a.updateFlightGrid()
 			a.World.Update(dt)
 			if a.World.ViewShip != nil {
 				a.cam.Follow(a.World.ViewShip.Pos())
@@ -323,6 +330,7 @@ func (a *App) Draw(screen *ebiten.Image) {
 		a.Renderer.DrawWorld(screen, a.World, a.cam)
 		a.Renderer.DrawTargetOverlay(screen, a.World, a.cam)
 		a.drawFlightOverlays(screen)
+		a.drawEngPanel(screen)
 	default:
 		a.drawSplash(screen)
 	}

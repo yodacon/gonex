@@ -10,6 +10,7 @@ import (
 
 	"yodacon.org/gonex/assets"
 	"yodacon.org/gonex/internal/mission"
+	"yodacon.org/gonex/internal/power"
 	"yodacon.org/gonex/internal/reentry"
 	"yodacon.org/gonex/internal/ui"
 )
@@ -24,6 +25,7 @@ const (
 	dockMain dockView = iota
 	dockBar
 	dockTrade
+	dockOutfit
 )
 
 type dockState struct {
@@ -40,6 +42,12 @@ func lumberPrice(system int) int { return 100 + (system*37)%160 }
 func (a *App) updateDock() {
 	d := a.dock
 	v := a.voy
+
+	// shore power: on the pad the bus idles, so the reactor's whole surplus
+	// walks the caps and battery back up while the pad loop takes the heat.
+	if v.Grid != nil {
+		v.Grid.Step(dt, power.Load{Vacuum: true})
+	}
 
 	// the scripted pilot admires the 1997 view for a beat, then wraps
 	if a.demoStellar > 0 {
@@ -83,12 +91,36 @@ func (a *App) updateDock() {
 		if inpututil.IsKeyJustPressed(ebiten.KeyT) {
 			d.view = dockMain
 		}
+	case dockOutfit:
+		// the stated goal of getting rich is really the goal of building a
+		// grid that survives richer contracts — but every tonne bought here
+		// is charged for by the atmosphere on the way back down.
+		for i, o := range power.Catalog() {
+			if inpututil.IsKeyJustPressed(ebiten.KeyDigit1 + ebiten.Key(i)) {
+				switch {
+				case v.Grid == nil:
+				case v.Credits < o.Price:
+					a.Console.Notifyf("Not enough credits for the %s.", o.Name)
+				default:
+					v.Credits -= o.Price
+					v.Grid.Buy(o)
+					a.Console.Notifyf("Fitted: %s (+%.0f t). Entries just got hotter — mind the corridor.",
+						o.Name, o.Kg/1000)
+				}
+				break
+			}
+		}
+		if inpututil.IsKeyJustPressed(ebiten.KeyO) {
+			d.view = dockMain
+		}
 	default:
 		switch {
 		case inpututil.IsKeyJustPressed(ebiten.KeyB):
 			d.view = dockBar
 		case inpututil.IsKeyJustPressed(ebiten.KeyT):
 			d.view = dockTrade
+		case inpututil.IsKeyJustPressed(ebiten.KeyO):
+			d.view = dockOutfit
 		case ebiten.IsKeyPressed(ebiten.KeyR):
 			// hold to refuel: the meters walk
 			if v.Fuel < v.FuelMax && v.Credits >= fuelPrice {
@@ -180,11 +212,28 @@ func (a *App) drawDock(screen *ebiten.Image) {
 		ui.DrawText(screen, "TRADE CENTER — lumber only, for now", x, y+90, 1)
 		ui.DrawText(screen, fmt.Sprintf("lumber %d cr/t here · aboard %d/%d t", price, v.Lumber, lumberCap), x, y+120, 0.9)
 		ui.DrawText(screen, "+ / - to buy and sell · T to leave", x, y+140, 0.7)
+	case dockOutfit:
+		ui.DrawText(screen, "OUTFITTER — the power grid is the ship. Number buys, O leaves.", x, y+90, 1)
+		if g := v.Grid; g != nil {
+			ui.DrawText(screen, fmt.Sprintf(
+				"plant: reactor %.1f MW · battery %.0f MJ · caps %.0f MJ · radiators %.1f MW · heat ceiling %.0f MJ",
+				g.ReactorMW, g.BattCapMJ, g.CapCapMJ, g.RadiatorMW, g.HeatCapMJ), x, y+114, 0.75)
+			ui.DrawText(screen, fmt.Sprintf(
+				"outfit mass +%.0f t — every tonne raises the ballistic coefficient on entry", g.OutfitKg/1000),
+				x, y+132, 0.75)
+		}
+		yy := y + 162
+		for i, o := range power.Catalog() {
+			ui.DrawText(screen, fmt.Sprintf("%d. %-22s %-28s %7d cr  +%3.0f t",
+				i+1, o.Name, o.Desc, o.Price, o.Kg/1000), x, yy, 1)
+			yy += 24
+		}
 	default:
 		opts := []string{
 			"B  Spaceport Bar    — contracts and rumors",
 			"R  Refuel (hold)    — jump fuel, then lithium",
 			"T  Trade Center     — the commodity spreadsheet",
+			"O  Outfitter        — generators, batteries, capacitors, radiators",
 			fmt.Sprintf("Y  Shipyard repairs — %d cr outstanding", v.RepairCost()),
 			"G  Gaming Annex     — queue-jumping charisma",
 			"L  Leave            — launch to orbit",

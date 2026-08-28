@@ -6,6 +6,7 @@ import (
 
 	"yodacon.org/gonex/internal/galaxy"
 	"yodacon.org/gonex/internal/mission"
+	"yodacon.org/gonex/internal/power"
 	"yodacon.org/gonex/internal/reentry"
 )
 
@@ -21,7 +22,8 @@ type Voyage struct {
 	FuelMax  int
 	Lithium  float64 // kg aboard for the shield
 	LiMax    float64
-	Lumber   int // tons of trade cargo on the deck
+	Lumber   int         // tons of trade cargo on the deck
+	Grid     *power.Grid // the ship's power plant — one grid, every mode
 	Dmg      reentry.Damage // carried between entries until repaired
 	Bits     mission.Bits
 	Active   []mission.Active
@@ -45,7 +47,8 @@ func newVoyage(seed int64) *Voyage {
 		Credits: 25000, System: homeSystem,
 		Fuel: 400, FuelMax: 400,
 		Lithium: veh.LiTank, LiMax: veh.LiTank,
-		Rng: rand.New(rand.NewSource(seed)),
+		Grid: power.Stock(),
+		Rng:  rand.New(rand.NewSource(seed)),
 	}
 }
 

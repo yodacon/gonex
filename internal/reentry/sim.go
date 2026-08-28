@@ -89,6 +89,12 @@ type Sim struct {
 	boostTimer float64
 	burstTimer float64
 
+	// Supply is the fraction of the shield's power demand the ship's grid
+	// met this frame, 0..1. The app's engineering layer sets it from the
+	// battery each step; standalone (tests, tools) it stays at 1. A starved
+	// coil keeps some authority — the field does not vanish, the array does.
+	Supply float64
+
 	Dmg    Damage
 	status Status
 	skipT  float64 // seconds spent flat/climbing while hypersonic and high
@@ -112,7 +118,7 @@ func New(veh Vehicle, prof Profile, seed int64) *Sim {
 	s := &Sim{
 		Veh: veh, Prof: prof,
 		H: 122000, V: 8350 * math.Sqrt(prof.GravityScale),
-		Li: veh.LiTank, BoostLeft: 2,
+		Li: veh.LiTank, BoostLeft: 2, Supply: 1,
 		Crossrange: 8, // you never arrive lined up
 		rng:        rand.New(rand.NewSource(seed)),
 	}
@@ -192,11 +198,14 @@ func (s *Sim) Step(dt float64, c Controls) {
 
 	s.Pt = stateAt(s.H, s.V, s.Veh, s.Prof, b, feed)
 
-	// power brownout: over budget, the array loses half its authority
+	// power brownout: over the vehicle's own bus budget the array loses
+	// half its authority, and a starving ship grid costs it again — an
+	// entry flown on an empty battery is nearly a bare-body entry.
 	authority := s.Pt.Gate
 	if s.Pt.PowerDraw > s.Veh.PowerCap {
 		authority *= 0.5
 	}
+	authority *= 0.35 + 0.65*math.Min(math.Max(s.Supply, 0), 1)
 
 	// commanded lift: pitch flies the needle, roll spends some of it sideways
 	pitch := math.Min(math.Max(c.Pitch, -1), 1)
