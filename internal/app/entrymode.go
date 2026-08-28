@@ -990,11 +990,15 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 	// the ILS final owns the world once the glideslope is captured — but
 	// the cockpit furniture stays: same dials, same inset, one scene
 	if e.finalT >= 0 {
+		// the interface splits with the flight: the corridor phase owns
+		// the full cockpit; the ILS final keeps only the dial states; the
+		// runway keeps NOTHING — every gauge comes off and the debrief
+		// card closes the flight.
 		a.drawFinalApproach(screen)
-		a.drawEntryDials(screen)
-		a.drawOrbitInset(screen)
-		if e.finalDone && s.Status() != reentry.Flying {
-			a.drawEntryOutcome(screen)
+		if !e.finalDone {
+			a.drawEntryDials(screen)
+		} else if s.Status() != reentry.Flying {
+			a.drawDebrief(screen)
 		}
 		return
 	}

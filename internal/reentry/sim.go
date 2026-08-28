@@ -143,6 +143,14 @@ type Sim struct {
 	OffCorridor float64
 	GuardianOn  bool
 
+	// the flight's conduct, remembered for the debrief: the hardest hit,
+	// the hottest moment, the seconds spent outside the pipe, and how
+	// many times the reflex had to save you.
+	MaxG       float64
+	PeakQFrac  float64
+	OffPipeT   float64
+	Recoveries int
+
 	// the damage-control reflex: hull burning off the corridor trips the
 	// flight computer into RECOVERY — it takes the stick and flies back
 	// toward the centerline for a few seconds or until the correction
@@ -238,6 +246,7 @@ func (s *Sim) Step(dt float64, c Controls) {
 		if s.recoveryT <= 0 && s.recoveryCD <= 0 && s.OffCorridor > 0.25 &&
 			s.GammaError() < 0 {
 			s.recoveryT = 5
+			s.Recoveries++
 		}
 		if s.recoveryT > 0 {
 			s.recoveryT -= dt
@@ -389,6 +398,13 @@ func (s *Sim) Step(dt float64, c Controls) {
 
 	s.RefG = s.RefGamma(s.H)
 	s.Width = s.CorridorWidth(s.H)
+
+	// the conduct ledger
+	s.MaxG = math.Max(s.MaxG, s.Pt.GLoad)
+	s.PeakQFrac = math.Max(s.PeakQFrac, s.Pt.QShielded/s.Veh.TPSLimit)
+	if s.OffCorridor > 0.02 {
+		s.OffPipeT += dt
+	}
 
 	s.accrueDamage(dt)
 	s.resolve(dt)
