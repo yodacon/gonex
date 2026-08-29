@@ -175,6 +175,16 @@ func New() (*App, error) {
 			} else if _, err := fmt.Sscanf(boot, "dock %d", &id); err == nil && id > 0 {
 				a.dock = &dockState{stellar: id}
 				a.mode = modeLanded
+				a.miniMapWin.Visible, a.hudWin.Visible, a.targetWin.Visible = false, false, false
+				a.fullMapWin.Visible, a.galaxyWin.Visible = false, false
+				// dev: land straight in a sub-view for screenshots
+				if strings.HasSuffix(boot, " bar") {
+					a.dock.view = dockBar
+					a.dock.rollMissions(a)
+				} else if strings.HasSuffix(boot, " missions") {
+					a.dock.view = dockMissions
+					a.dock.rollMissions(a)
+				}
 			} else if _, err := fmt.Sscanf(boot, "takeoff %d", &id); err == nil && id > 0 {
 				a.startTakeoff(id)
 			} else if _, err := fmt.Sscanf(boot, "route %d", &id); err == nil && id > 0 {

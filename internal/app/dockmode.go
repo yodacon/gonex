@@ -76,16 +76,60 @@ func missionDest(d mission.Def) int {
 	return -1
 }
 
-// drawMissionChart is the quest computer's map: every known system as a
-// dot, you in green, and the route to the first open posting drawn with
-// its hop legs — how far the work actually is.
+// chartStarTint colors a system's star and its name label by government,
+// the Ares way: your own lane operator glows phosphor, the Confederation
+// reads cool cyan-white, everyone else falls on a warm hash — so the map
+// answers "whose sky is that" before you can read a single name.
+func chartStarTint(govt string) (star, name color.RGBA) {
+	switch govt {
+	case "Consolidated Express":
+		return color.RGBA{160, 255, 160, 255}, color.RGBA{120, 230, 120, 255}
+	case "Confederation":
+		return color.RGBA{170, 210, 255, 255}, color.RGBA{110, 200, 230, 255}
+	case "":
+		return color.RGBA{200, 200, 190, 255}, color.RGBA{140, 140, 130, 255}
+	}
+	h := hash31(len(govt), int(govt[0]))
+	pal := [3]struct{ star, name color.RGBA }{
+		{color.RGBA{255, 190, 120, 255}, color.RGBA{235, 170, 90, 255}},
+		{color.RGBA{255, 140, 130, 255}, color.RGBA{230, 110, 100, 255}},
+		{color.RGBA{225, 170, 255, 255}, color.RGBA{195, 140, 230, 255}},
+	}
+	p := pal[h%3]
+	return p.star, p.name
+}
+
+// drawMissionChart is the quest computer's map, in the Ares grammar: a
+// dotted grid over a speckled void, every system a glowing tinted star,
+// names beside the stars you can actually reach soon, the route as a
+// dotted trace, and a chart-table crosshair boxed on where you stand.
 func (a *App) drawMissionChart(screen *ebiten.Image, curSys, destSys int,
 	x0, y0, w, h float64) {
 	vector.DrawFilledRect(screen, float32(x0), float32(y0), float32(w), float32(h),
-		premul(color.RGBA{5, 7, 10, 255}, 0.7), false)
+		color.RGBA{3, 5, 7, 250}, false)
 	vector.StrokeRect(screen, float32(x0), float32(y0), float32(w), float32(h), 1,
 		premul(colRule, 0.9), false)
-	ui.DrawText(screen, "CHART", x0+8, y0+6, 0.7)
+	// the speckled void
+	for i := 0; i < 90; i++ {
+		hsh := hash31(i, 77)
+		sx := x0 + 4 + float64(hsh%1000)/1000*(w-8)
+		sy := y0 + 16 + float64((hsh>>10)%1000)/1000*(h-24)
+		fastDot(screen, float32(sx), float32(sy), 0.8,
+			color.RGBA{200, 205, 215, 255}, 0.12+float64(hsh%40)/200)
+	}
+	// the dotted grid
+	gridC := color.RGBA{46, 105, 58, 255}
+	for gx := x0 + w/8; gx < x0+w-4; gx += w / 8 {
+		for gy := y0 + 18; gy < y0+h-4; gy += 7 {
+			fastDot(screen, float32(gx), float32(gy), 0.6, gridC, 0.5)
+		}
+	}
+	for gy := y0 + 18 + (h-18)/6; gy < y0+h-4; gy += (h - 18) / 6 {
+		for gx := x0 + 4; gx < x0+w-4; gx += 7 {
+			fastDot(screen, float32(gx), float32(gy), 0.6, gridC, 0.5)
+		}
+	}
+	ui.DrawText(screen, "MISSION ANALYSIS", x0+8, y0+5, 0.7)
 
 	minX, minY := math.MaxFloat64, math.MaxFloat64
 	maxX, maxY := -math.MaxFloat64, -math.MaxFloat64
@@ -98,33 +142,91 @@ func (a *App) drawMissionChart(screen *ebiten.Image, curSys, destSys int,
 		if s == nil || maxX <= minX || maxY <= minY {
 			return 0, 0, false
 		}
-		return float32(x0 + 14 + (float64(s.X)-minX)/(maxX-minX)*(w-28)),
-			float32(y0 + 24 + (float64(s.Y)-minY)/(maxY-minY)*(h-40)), true
+		return float32(x0 + 16 + (float64(s.X)-minX)/(maxX-minX)*(w-32)),
+			float32(y0 + 26 + (float64(s.Y)-minY)/(maxY-minY)*(h-46)), true
 	}
-	for id := range a.gal.Systems {
-		if fx, fy, ok := px(id); ok {
-			fastDot(screen, fx, fy, 1, color.RGBA{110, 130, 150, 255}, 0.6)
-		}
-	}
-	if destSys >= 0 {
-		if route := a.gal.Route(curSys, destSys); len(route) > 1 {
-			for i := 0; i+1 < len(route); i++ {
-				x1, y1, ok1 := px(route[i])
-				x2, y2, ok2 := px(route[i+1])
-				if ok1 && ok2 {
-					fastLine(screen, x1, y1, x2, y2, 1.5, hudGreen, 0.8)
+
+	// hop distances from here, one BFS — names go only on the near sky
+	dist := map[int]int{curSys: 0}
+	queue := []int{curSys}
+	for qi := 0; qi < len(queue); qi++ {
+		id := queue[qi]
+		if s := a.gal.Systems[id]; s != nil {
+			for _, l := range s.Links {
+				if _, seen := dist[l]; !seen {
+					dist[l] = dist[id] + 1
+					queue = append(queue, l)
 				}
 			}
-			ui.DrawText(screen, fmt.Sprintf("route: %d hops · %d fuel · %d days",
-				len(route)-1, (len(route)-1)*jumpFuel, (len(route)-1)*jumpDays),
-				x0+8, y0+h-18, 0.7)
-		}
-		if fx, fy, ok := px(destSys); ok {
-			fastDot(screen, fx, fy, 3, color.RGBA{255, 157, 63, 255}, 0.95)
 		}
 	}
+	onRoute := map[int]bool{}
+	var route []int
+	if destSys >= 0 {
+		route = a.gal.Route(curSys, destSys)
+		for _, id := range route {
+			onRoute[id] = true
+		}
+	}
+	// the stars
+	for id, s := range a.gal.Systems {
+		fx, fy, ok := px(id)
+		if !ok {
+			continue
+		}
+		star, nameC := chartStarTint(s.Govt)
+		glowDot(screen, fx, fy, 9, star, 0.85)
+		fastDot(screen, fx, fy, 2, star, 0.9)
+		fastDot(screen, fx, fy, 0.9, color.RGBA{255, 255, 252, 255}, 1)
+		if d, near := dist[id]; (near && d <= 2) || onRoute[id] || id == destSys {
+			al := float32(0.9)
+			if d, ok := dist[id]; ok && d > 2 && !onRoute[id] {
+				al = 0.65
+			}
+			if id == destSys {
+				nameC = color.RGBA{255, 157, 63, 255}
+			}
+			if id == curSys {
+				nameC = colChrome
+			}
+			// stagger labels above/below by hash so the dense core reads
+			ly := float64(fy) - 11
+			if hash31(id, 3)%2 == 0 {
+				ly = float64(fy) + 3
+			}
+			ui.DrawTextScaled(screen, s.Name, float64(fx)+6, ly, 0.8, nameC, al)
+		}
+	}
+	// the route: a dotted trace, Ares boundary-style
+	for i := 0; i+1 < len(route); i++ {
+		x1, y1, ok1 := px(route[i])
+		x2, y2, ok2 := px(route[i+1])
+		if !ok1 || !ok2 {
+			continue
+		}
+		dx, dy := float64(x2-x1), float64(y2-y1)
+		l := math.Hypot(dx, dy)
+		for t := 4.0; t < l; t += 8 {
+			fastDot(screen, x1+float32(dx*t/l), y1+float32(dy*t/l), 1,
+				color.RGBA{255, 244, 180, 255}, 0.85)
+		}
+	}
+	if len(route) > 1 {
+		ui.DrawText(screen, fmt.Sprintf("route: %d hops · %d fuel · %d days",
+			len(route)-1, (len(route)-1)*jumpFuel, (len(route)-1)*jumpDays),
+			x0+8, y0+h-18, 0.7)
+	}
+	if fx, fy, ok := px(destSys); ok && destSys >= 0 {
+		glowDot(screen, fx, fy, 10, color.RGBA{255, 157, 63, 255}, 0.8)
+	}
+	// the crosshair box on the current system
 	if fx, fy, ok := px(curSys); ok {
-		fastDot(screen, fx, fy, 3, hudGreen, 1)
+		ch := colChrome
+		vector.StrokeRect(screen, fx-7, fy-7, 14, 14, 1, ch, false)
+		fastLine(screen, float32(x0+4), fy, fx-10, fy, 1, ch, 0.4)
+		fastLine(screen, fx+10, fy, float32(x0+w-4), fy, 1, ch, 0.4)
+		fastLine(screen, fx, float32(y0+18), fx, fy-10, 1, ch, 0.4)
+		fastLine(screen, fx, fy+10, fx, float32(y0+h-4), 1, ch, 0.4)
 	}
 }
 
@@ -416,26 +518,56 @@ func (a *App) drawDock(screen *ebiten.Image) {
 	x, y := 60.0, 70.0
 	ui.DrawText(screen, fmt.Sprintf("%s — %s system", st.Name, sys.Name), x, y, 1)
 	ui.DrawText(screen, fmt.Sprintf("%s · tech %d · day %d", st.Govt, st.Tech, v.Day), x, y+20, 0.8)
-	ui.DrawText(screen, fmt.Sprintf("credits %d · fuel %d/%d · li %.1f kg · rcs %.0f kg · hull %.0f%% · cargo %d/%d t · crew %d · escorts %d",
-		v.Credits, v.Fuel, v.FuelMax, v.Lithium, v.RCSFuel, 100-v.Dmg.Hull, v.CargoTotal(), cargoCap, v.Crew, len(v.Escorts)), x, y+40, 0.8)
+	ui.DrawText(screen, fmt.Sprintf("credits %d · crew %d · escorts %d",
+		v.Credits, v.Crew, len(v.Escorts)), x, y+40, 0.8)
 	if over := v.CargoTotal() - cargoCap; over > 0 {
 		ui.DrawTextScaled(screen, fmt.Sprintf("OVERSTUFFED %d%% — the corridor charges by the ton", 100*v.CargoTotal()/cargoCap),
 			x, y+56, 1, color.RGBA{255, 193, 77, 255}, 0.9)
 	}
 
+	// the ship's state as the Ares sidebar rail: bezelled tanks under the
+	// pad view, filling from the bottom, one glance for the whole vessel
+	battFrac := 1.0
+	if v.Grid != nil {
+		battFrac = v.Grid.BattFrac()
+	}
+	cargoC := color.RGBA{206, 196, 122, 255}
+	if v.CargoTotal() > cargoCap {
+		cargoC = color.RGBA{212, 116, 110, 255}
+	}
+	gauges := []struct {
+		frac       float64
+		c          color.RGBA
+		label, val string
+	}{
+		{float64(v.Fuel) / math.Max(float64(v.FuelMax), 1), color.RGBA{96, 148, 255, 255}, "FUEL", fmt.Sprintf("%d", v.Fuel)},
+		{(100 - v.Dmg.Hull) / 100, color.RGBA{110, 200, 110, 255}, "HULL", fmt.Sprintf("%.0f%%", 100-v.Dmg.Hull)},
+		{v.Lithium / math.Max(v.LiMax, 1), color.RGBA{255, 92, 108, 255}, "LI", fmt.Sprintf("%.0fkg", v.Lithium)},
+		{v.RCSFuel / math.Max(v.RCSMax, 1), color.RGBA{255, 190, 96, 255}, "RCS", fmt.Sprintf("%.0fkg", v.RCSFuel)},
+		{battFrac, color.RGBA{86, 220, 226, 255}, "BATT", fmt.Sprintf("%.0f%%", battFrac*100)},
+		{float64(v.CargoTotal()) / float64(overstuffCap), cargoC, "HOLD", fmt.Sprintf("%dt", v.CargoTotal())},
+	}
+	gx := float64(ScreenW) - 60 - float64(len(gauges))*44
+	for i, g := range gauges {
+		ui.VGauge(screen, gx+float64(i)*44, 356, 22, 130, g.frac, g.c, g.label, g.val)
+	}
+
 	switch d.view {
 	case dockBar:
-		ui.DrawText(screen, "SPACEPORT BAR — number takes a contract · H hire escort · F fire escort · C crew on · X crew off · B leave", x, y+90, 1)
+		ui.DrawText(screen, "SPACEPORT BAR — a keypress takes a contract", x, y+90, 1)
+		yy := y + 116
 		if len(d.offers) == 0 {
-			ui.DrawText(screen, "Nobody here has work for you today. (The mission computer knows the odds — M from the concourse.)", x, y+120, 0.8)
+			ui.DrawText(screen, "Nobody here has work for you today. (The mission computer knows the odds — M from the concourse.)", x, yy, 0.8)
+			yy += 28
 		}
-		yy := y + 120
 		for i, def := range d.offers {
 			pay := fmt.Sprintf("%d cr", def.Pay)
 			if def.Pay == 0 {
-				pay = "trust"
+				pay = "on trust"
 			}
-			ui.DrawText(screen, fmt.Sprintf("%d. %-28s %10s", i+1, def.Name, pay), x, yy, 1)
+			// each open contract is a green Ares keycap, its brief beneath
+			ui.Keycap(screen, x, yy, 520, fmt.Sprintf("%d", i+1),
+				fmt.Sprintf("%s — %s", def.Name, pay), ui.ToneGreen, false)
 			brief := def.QuickBrief
 			if brief == "" {
 				brief = def.Brief
@@ -443,14 +575,20 @@ func (a *App) drawDock(screen *ebiten.Image) {
 			if len(brief) > 96 {
 				brief = brief[:96] + "…"
 			}
-			ui.DrawText(screen, "   "+brief, x, yy+16, 0.65)
-			yy += 44
+			ui.DrawText(screen, brief, x+12, yy+26, 0.65)
+			yy += 52
 		}
 		esc := a.Catalog.Get(a.escortFor(d.stellar))
-		yy += 12
+		yy += 10
 		ui.DrawText(screen, fmt.Sprintf("WING TABLE — a %s pilot drinks here: %d cr to hire, %d cr/day after",
 			esc.Name, shipPrice(esc)/8, escortWage), x, yy, 0.9)
 		ui.DrawText(screen, fmt.Sprintf("crew wages %d cr/day each · payroll walks every jump and landing", crewWage), x, yy+18, 0.7)
+		by := yy + 44
+		ui.Keycap(screen, x, by, 176, "H", "Hire wing", ui.ToneKhaki, false)
+		ui.Keycap(screen, x+186, by, 176, "F", "Fire wing", ui.ToneKhaki, false)
+		ui.Keycap(screen, x+372, by, 176, "C", "Crew on", ui.ToneKhaki, false)
+		ui.Keycap(screen, x+558, by, 176, "X", "Crew off", ui.ToneKhaki, false)
+		ui.Keycap(screen, x+744, by, 176, "B", "Leave", ui.ToneGreen, true)
 	case dockMissions:
 		ui.DrawText(screen, "MISSION COMPUTER — postings for this port, filtered by your affiliations. M leaves.", x, y+90, 1)
 		if len(d.board) == 0 {
@@ -464,8 +602,10 @@ func (a *App) drawDock(screen *ebiten.Image) {
 		chartDest := -1
 		for _, def := range d.board {
 			status := fmt.Sprintf("no slot (%d%%/day)", def.AvailRandom)
+			open := false
 			if i, ok := posted[def.ID]; ok {
 				status = fmt.Sprintf("OPEN — press %d", i+1)
+				open = true
 			}
 			pay := fmt.Sprintf("%d cr", def.Pay)
 			if def.Pay == 0 {
@@ -484,8 +624,12 @@ func (a *App) drawDock(screen *ebiten.Image) {
 			} else if def.TravelStel >= 10000 {
 				hops = "sealed"
 			}
-			ui.DrawText(screen, fmt.Sprintf("%-24s %9s %-8s %s",
-				def.Name, pay, hops, status), x, yy, 1)
+			rowC := color.RGBA{223, 228, 230, 255}
+			if open {
+				rowC = color.RGBA{140, 240, 140, 255}
+			}
+			ui.DrawTextScaled(screen, fmt.Sprintf("%-24s %9s %-8s %s",
+				def.Name, pay, hops, status), x, yy, 1, rowC, 1)
 			yy += 22
 		}
 		yy += 12
@@ -599,20 +743,34 @@ func (a *App) drawDock(screen *ebiten.Image) {
 			screen.DrawImage(t, top)
 		}
 	default:
-		opts := []string{
-			"B  Spaceport Bar    — contracts, escorts and crew",
-			"M  Mission Computer — every posting, and today's odds",
-			"R  Refuel (hold)    — jump fuel, then lithium",
-			"T  Trade Center     — the commodity spreadsheet",
-			"O  Outfitter        — generators, batteries, capacitors, radiators",
-			"S  Shipyard         — change your hull",
-			fmt.Sprintf("Y  Yard repairs     — %d cr outstanding", v.RepairCost()),
-			"V  Save berth       — write the pilot file",
-			"G  Gaming Annex     — queue-jumping charisma",
-			"L  Leave            — launch to orbit",
+		// the concourse, in the Ares button grammar: raised keycap, label
+		// bar, tones by intent — khaki for the port services, red for a
+		// repair bill outstanding, gray for the paperwork, green to fly
+		repTone, repLit := ui.ToneDim, false
+		repLabel := "Yard repairs — nothing outstanding"
+		if rc := v.RepairCost(); rc > 0 {
+			repTone, repLit = ui.ToneRed, true
+			repLabel = fmt.Sprintf("Yard repairs — %d cr outstanding", rc)
+		}
+		type opt struct {
+			key, label string
+			tone       ui.KeyTone
+			lit        bool
+		}
+		opts := []opt{
+			{"B", "Spaceport Bar — contracts, escorts, crew", ui.ToneKhaki, false},
+			{"M", "Mission Computer — postings and odds", ui.ToneKhaki, false},
+			{"R", "Refuel (hold) — jump fuel, then lithium", ui.ToneKhaki, false},
+			{"T", "Trade Center — the commodity board", ui.ToneKhaki, false},
+			{"O", "Outfitter — the power grid catalog", ui.ToneKhaki, false},
+			{"S", "Shipyard — change your hull", ui.ToneKhaki, false},
+			{"Y", repLabel, repTone, repLit},
+			{"V", "Save berth — write the pilot file", ui.ToneGray, false},
+			{"G", "Gaming Annex — queue-jumping charisma", ui.ToneKhaki, false},
+			{"L", "Leave — launch to orbit", ui.ToneGreen, true},
 		}
 		for i, o := range opts {
-			ui.DrawText(screen, o, x, y+100+float64(i)*24, 1)
+			ui.Keycap(screen, x, y+100+float64(i)*30, 470, o.key, o.label, o.tone, o.lit)
 		}
 		if n := len(v.Active); n > 0 {
 			ui.DrawText(screen, fmt.Sprintf("ACTIVE MISSIONS (%d):", n), x, y+350, 0.9)
