@@ -14,6 +14,7 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
+	"github.com/hajimehoshi/ebiten/v2/vector"
 
 	"yodacon.org/gonex/assets"
 	"yodacon.org/gonex/internal/camera"
@@ -88,9 +89,10 @@ type App struct {
 	shotFrame int
 	shotAt    int
 
-	recDir   string // GONEX_REC: dump every Nth frame here for gif assembly
-	recEvery int
-	recN     int
+	recDir     string // GONEX_REC: dump every Nth frame here for gif assembly
+	recEvery   int
+	recN       int
+	recCaption string // GONEX_REC_CAPTION: burned into every recorded frame
 
 	demoStellar int // GONEX_BOOT "demo <spob>": a scripted full landing
 	demoT       float64
@@ -187,6 +189,7 @@ func New() (*App, error) {
 		}
 	}
 	a.recDir = os.Getenv("GONEX_REC")
+	a.recCaption = os.Getenv("GONEX_REC_CAPTION")
 	a.recEvery = 15
 	if n := 0; os.Getenv("GONEX_REC_EVERY") != "" {
 		if _, err := fmt.Sscanf(os.Getenv("GONEX_REC_EVERY"), "%d", &n); err == nil && n > 0 {
@@ -405,8 +408,16 @@ func (a *App) Draw(screen *ebiten.Image) {
 			a.quitting = true
 		}
 	}
-	// dev recording: GONEX_REC=<dir> writes every Nth frame for gif assembly
+	// dev recording: GONEX_REC=<dir> writes every Nth frame for gif assembly.
+	// GONEX_REC_CAPTION burns a flight-recorder caption bar into the frames
+	// themselves — version, build date, take — in the game's own font, so a
+	// published recording carries its provenance in-band.
 	if a.recDir != "" {
+		if a.recCaption != "" {
+			vector.DrawFilledRect(screen, 0, ScreenH-20, ScreenW, 20,
+				color.RGBA{5, 7, 10, 235}, false)
+			ui.DrawText(screen, a.recCaption, 10, float64(ScreenH)-16, 0.85)
+		}
 		if a.recN++; a.recN%a.recEvery == 0 {
 			dumpFrame(screen, fmt.Sprintf("%s/f%06d.png", a.recDir, a.recN))
 		}
