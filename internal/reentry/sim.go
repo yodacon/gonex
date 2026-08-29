@@ -32,7 +32,7 @@ func Yodacon() Vehicle {
 		Mass: 350e3, RefMass: 350e3, Diameter: 40, NoseRadius: 12, LDMax: 0.35,
 		GlideLD:  1.0, // five by five: the wing shape glides 5:5
 		TPSLimit: 60e4, GLimit: 6, CoilField: 1.2, LiTank: 60,
-		RCSTank: 80, PowerCap: 4e6,
+		RCSTank: 130, PowerCap: 4e6,
 	}
 }
 
@@ -173,7 +173,7 @@ func New(veh Vehicle, prof Profile, seed int64) *Sim {
 		veh.GlideLD = veh.LDMax
 	}
 	if veh.RCSTank == 0 {
-		veh.RCSTank = 80
+		veh.RCSTank = 130
 	}
 	s := &Sim{
 		Veh: veh, Prof: prof,
@@ -340,13 +340,15 @@ func (s *Sim) Step(dt float64, c Controls) {
 	// every correction. An empty tank is a mushy stick — come in steep
 	// and the bottles are critical by the flare.
 	spend := (0.55*math.Abs(pitch) + 0.45*math.Abs(roll)) *
-		(0.5 + math.Min(qd/9000, 2.5)) * 0.12 * s.Veh.WeightFactor() *
+		(0.5 + math.Min(qd/9000, 2.5)) * 0.085 * s.Veh.WeightFactor() *
 		(0.3 + 0.7*math.Min(s.V/3000, 1)) // aero trim takes over low and slow
 	if s.GammaError() < -s.Width {
 		spend *= 2.2
 	}
 	s.RCS = math.Max(s.RCS-spend*dt, 0)
-	rcsAuth := 0.35 + 0.65*math.Min(s.RCS/8, 1) // the last kilos fade
+	// the last kilos fade — but the floor is higher than it was: the
+	// terminal sink is where a pilot needs the stick most
+	rcsAuth := 0.45 + 0.55*math.Min(s.RCS/5, 1)
 
 	// the wing-shape coefficient: as the airframe takes over, the
 	// commandable L/D opens up from the cone's 0.35 to the glide ratio

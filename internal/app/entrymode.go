@@ -90,6 +90,19 @@ type smokeBlob struct {
 	life, span   float64
 }
 
+// cloudBlob is one cell of the volumetric layer the ship flies THROUGH:
+// born as a speck at the vanishing point, it rides the sightline out at
+// flight speed, swelling with the viewport angle, then sweeps hard past
+// the camera toward the bottom of the screen. warm blends it from pale
+// condensation to plasma-lit as the sheath heats.
+type cloudBlob struct {
+	tx, ty float64 // where on the ship plane it is headed
+	f      float64 // 0 at the vanishing point → 1 at the ship plane
+	spd    float64
+	r      float64 // radius at the ship plane
+	warm   float64
+}
+
 type trailPt struct {
 	dr, h, v float64 // m downrange, m altitude, m/s velocity
 }
@@ -186,6 +199,9 @@ type entryState struct {
 	contrail []smokeBlob
 	dust     []smokeBlob
 	dustDone bool
+
+	// the volumetric layer the descent flies through
+	clouds []cloudBlob
 }
 
 // The plasma ramp: the sheath read as layers, front to wake — blue at the
@@ -800,6 +816,33 @@ func (a *App) updatePlasma(c reentry.Controls) {
 	e.machCloud.Step(dt)
 
 	rng := a.voy.Rng
+	vpx, vpy := shipX, hy+8
+
+	// --- the volumetric layer: the ship flies THROUGH the atmosphere,
+	// so the atmosphere flies at the camera. A few blobs at first, count
+	// and luminosity ramping with sheath heat and air density; each
+	// rides the sightline out from the vanishing point with perspective
+	// acceleration, then sweeps hard down past the camera.
+	want := 3 + int(qFrac*24+s.AeroAuth*20)
+	if len(e.clouds) < want && s.V > 600 {
+		e.clouds = append(e.clouds, cloudBlob{
+			tx:   shipX + (rng.Float64()-0.5)*780,
+			ty:   float64(shipDrawY) + (rng.Float64()-0.5)*320,
+			f:    0.03 + rng.Float64()*0.05,
+			spd:  (0.35 + rng.Float64()*0.45) * (0.4 + 0.6*s.V/8350),
+			r:    40 + rng.Float64()*80,
+			warm: math.Min(qFrac*1.7, 1),
+		})
+	}
+	liveClouds := e.clouds[:0]
+	for _, cb := range e.clouds {
+		cb.f += cb.spd * dt * (0.22 + cb.f*1.7) // slow far out, violent close in
+		if cb.f < 1.7 {
+			liveClouds = append(liveClouds, cb)
+		}
+	}
+	e.clouds = liveClouds
+
 	if s.V > 900 {
 		// 1) the major drift: the flame river pouring out of the horizon,
 		// dead in the ship's path. Streams are born hard against the
@@ -807,7 +850,6 @@ func (a *App) updatePlasma(c reentry.Controls) {
 		// deflected ones wash past the camera toward the bottom of the
 		// screen — the whole sky feeding the bow wave, the bow wave
 		// routing it around the shield.
-		vpx, vpy := shipX, hy+8
 		for i, n := 0, 16+int(qFrac*42); i < n; i++ {
 			// most aim straight down the flight path at the standoff cone;
 			// a few go wide so the flanks still stream
@@ -892,6 +934,7 @@ func (a *App) updatePlasma(c reentry.Controls) {
 	e.puffs = livePuffs
 
 	live := e.parts[:0]
+	var born []plasmaParticle
 	for _, p := range e.parts {
 		p.life += dt
 		switch {
@@ -935,18 +978,46 @@ func (a *App) updatePlasma(c reentry.Controls) {
 				p.bounced, p.phase = true, 0.24
 			}
 		default:
-			// ionized: lock onto the dipole's field line and slide along
-			// it, ram pressure dragging the burning stream aft. The lock
-			// is stiff and the downstream drag light, so the fire traces
-			// the lobes visibly before the wake claims it.
+			// ionized: TWO fields fight over every blob. The coil's
+			// dipole pulls it along the field line; the ram flow pushes
+			// it radially out of the vanishing point. Coupling (the MHD
+			// gate) decides who wins — and a coupled blob doesn't just
+			// follow the line, it TWIRLS around it, the way the shield
+			// actually grips plasma: a perpendicular component walking
+			// the blob helically along its lobe.
 			bx, by := dipoleB(p.x-cx, p.y-cy, mx, my)
 			if bl := math.Hypot(bx, by); bl > 1e-12 {
-				sp := 190 + 240*qFrac
-				tx, ty := bx/bl*sp, by/bl*sp+230
+				coup := s.Pt.Gate
+				spB := (190 + 240*qFrac) * coup
+				rmx, rmy := p.x-vpx, p.y-vpy
+				if rl := math.Hypot(rmx, rmy); rl > 1e-6 {
+					rmx, rmy = rmx/rl, rmy/rl
+				}
+				ram := 360 * (1 - 0.55*coup)
+				tx := bx/bl*spB + rmx*ram
+				ty := by/bl*spB + rmy*ram + 210
+				// the helical grip: strongest fully coupled
+				per := 75 * coup * math.Sin(s.T*8+p.phase*11+(p.x+p.y)*0.02)
+				tx += -by / bl * per
+				ty += bx / bl * per
 				p.vx += (tx - p.vx) * math.Min(6.5*dt, 1)
 				p.vy += (ty - p.vy) * math.Min(6.5*dt, 1)
 			}
 			p.phase = math.Min(p.phase+dt*0.85, 1)
+			// the cascade: a hot blob in the bow wake sheds children —
+			// glowing particles spawning glowing particles, the count
+			// climbing with the burn
+			if p.phase > 0.3 && p.phase < 0.9 && len(e.parts)+len(born) < 2700 &&
+				p.y > nose-standPx-30 && rng.Float64() < dt*3 {
+				born = append(born, plasmaParticle{
+					x: p.x, y: p.y,
+					vx:   p.vx*0.6 + (rng.Float64()-0.5)*140,
+					vy:   p.vy*0.6 + 70,
+					span: 0.5 + rng.Float64()*0.5, scale: p.scale * 0.7,
+					bounced: true, phase: math.Min(p.phase+0.15, 1),
+					life: 0,
+				})
+			}
 		}
 		// the wash: everything in the flow drafts toward the bottom of
 		// the screen — gently on approach, hard once it is past the nose
@@ -971,7 +1042,7 @@ func (a *App) updatePlasma(c reentry.Controls) {
 			})
 		}
 	}
-	e.parts = live
+	e.parts = append(live, born...)
 	if len(e.parts) > 3000 {
 		e.parts = e.parts[len(e.parts)-3000:]
 	}
@@ -1357,6 +1428,25 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 			glowDot(screen, gcx, gcy, 220, colBad, 0.25*s.OffCorridor)
 		}
 	}
+	// the volumetric layer, same glow batch: each blob placed by its own
+	// perspective — a speck at the vanishing point swelling as it closes,
+	// then swept violently below the camera. The warm ones are the
+	// sheath's own light scattered back out of the air being flown
+	// through.
+	vpx, vpy := shipX, hy+8
+	for _, cb := range e.clouds {
+		px := vpx + (cb.tx-vpx)*cb.f
+		py := vpy + (cb.ty-vpy)*cb.f +
+			320*math.Pow(math.Max(cb.f-0.8, 0), 2) // the sweep past the camera
+		r := cb.r * (0.05 + cb.f*cb.f)
+		cw := cb.warm
+		col := color.RGBA{
+			uint8(150 + 105*cw), uint8(180 - 30*cw), uint8(220 - 140*cw), 255}
+		al := (0.05 + 0.11*cw) * math.Min(cb.f*3, 1)
+		if py < gaugeTop+120 {
+			glowDot(screen, float32(px), float32(py), float32(r), col, al)
+		}
+	}
 	// the plasma bow wave proper: the fire grid bent along the shell,
 	// burning UNDER the mirror line — the sheath the ship pushes ahead
 	drawBowFire(screen, e.bowFire, bowGeom{
@@ -1383,9 +1473,11 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 		lx, ly, prev = px, py, true
 	}
 
-	// --- the burning envelope, in layers: bar-magnet field lines the
-	// plasma rides, the fire glow (the bow wave burning on the expanded
-	// mask), the hull itself, then the shield band over it.
+	// --- the burning envelope, in layers: the directed plasma pillows
+	// (the coupled lobes, glowing from within), the bar-magnet field
+	// lines the plasma rides, the fire glow (the bow wave burning on the
+	// expanded mask), the hull itself, then the shield band over it.
+	a.drawPlasmaPillows(screen)
 	a.drawFieldLines(screen)
 	shipImg := a.Catalog.Get(a.Cfg.PlayerShipID).Sprites[0]
 	// across the seam the ship glides to the ILS final's anchor and scale;
@@ -1742,6 +1834,49 @@ func (a *App) drawSky(screen *ebiten.Image, hkm, hy, bank, pivotX, sun float64, 
 	op.GeoM.Rotate(bank)
 	op.GeoM.Translate(pivotX, hy)
 	screen.DrawImage(img, op)
+}
+
+// drawPlasmaPillows paints what coupling actually looks like: the plasma
+// the coil has captured, packed into the dipole's lobes and glowing from
+// within — two pillow-shaped volumes hugging the flanks, breathing with
+// the sim clock. They are DIRECTED: rolling inflates the pillow opposite
+// the turn (the hardened lobe doing the pushing) and starves the other,
+// so the steering is readable as light before it is readable as motion.
+func (a *App) drawPlasmaPillows(screen *ebiten.Image) {
+	e, s := a.entry, a.entry.sim
+	auth := s.PlasmaAuth
+	if auth < 0.05 || s.V < 900 {
+		return
+	}
+	cx, cy := shipX-e.bank*30, float64(shipDrawY)
+	mAng := e.bank*0.7 - e.roll*0.45
+	sinm, cosm := math.Sin(mAng), math.Cos(mAng)
+	lobe := -e.roll
+	rollAbs := math.Abs(e.roll)
+	for li, L := range [2]float64{64, 98} {
+		col := colEM
+		if li == 1 {
+			col = colN2 // the outer pillow glows in the nitrogen line
+		}
+		for _, side := range [2]float64{-1, 1} {
+			// the directed swell: the pushing side fattens, the other thins
+			swell := 1 + 0.55*math.Max(0, lobe*side)*rollAbs -
+				0.35*math.Max(0, -lobe*side)*rollAbs
+			breathe := 1 + 0.07*math.Sin(s.T*5+side*1.7+float64(li))
+			for i := 0; i <= 9; i++ {
+				th := 0.35 + (math.Pi-0.7)*float64(i)/9
+				st := math.Sin(th)
+				r := L * st * st * swell * breathe
+				ax := side * r * st
+				ay := -r * math.Cos(th)
+				px := cx + ax*cosm - ay*sinm
+				py := cy + ax*sinm + ay*cosm
+				glowDot(screen, float32(px), float32(py),
+					float32(9+L*0.24*swell), col,
+					(0.05+0.12*auth)*swell*(0.7+0.3*st))
+			}
+		}
+	}
 }
 
 // drawFieldLines draws the bar-magnet dipole's nested lobes — r = L·sin²θ
