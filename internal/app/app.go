@@ -38,7 +38,7 @@ const (
 	dt      = 1.0 / 60 // Ebitengine's fixed tick
 
 	AppName    = "Gonex"
-	AppVersion = "v0.1.0-rc1"
+	AppVersion = "v0.1.0-rc2"
 	ConfigPath = "config.xml"
 )
 
