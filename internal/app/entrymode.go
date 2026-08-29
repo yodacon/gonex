@@ -1580,6 +1580,7 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 	a.drawILSSide(screen)
 	a.drawEntryHud(screen, hy) // the landing HUD flies the whole sequence
 	a.drawTrajProjection(screen, hy)
+	a.drawSteerDirector(screen, hy)
 	a.drawBurnWarnings(screen)
 
 	// deorbit plasma white-in
@@ -1615,18 +1616,28 @@ func (a *App) drawTrajProjection(screen *ebiten.Image, hy float64) {
 		}
 	}
 	ui.DrawText(screen, "PIPE", shipX+80, hy+(-s.RefG)*pxPerDeg-4, 0.6)
-	// the landing goal: the pad, marked at its own depression angle —
-	// this is where the dotted line is supposed to arrive
+	// the landing goal: the pad, marked at its own depression angle AND
+	// its own bearing — the diamond sits left or right exactly where the
+	// pad line is, so "which way do I steer" has an object to steer at.
+	// Off-screen it pins to the edge with an arrow.
 	if s.PadDist > 4 {
 		padDrop := math.Atan2(s.H, s.PadDist*1000) * 180 / math.Pi
 		py := hy + padDrop*pxPerDeg
+		px := shipX + (0-s.Crossrange)/s.PadDist*430
+		pinned := ""
+		if px < 120 {
+			px, pinned = 120, "<< "
+		} else if px > float64(ScreenW)-180 {
+			px, pinned = float64(ScreenW)-180, " >>"
+		}
 		if py < gaugeTop-12 {
-			fy := float32(py)
-			vector.StrokeLine(screen, float32(shipX-7), fy, float32(shipX), fy-7, 1.4, hudGreen, false)
-			vector.StrokeLine(screen, float32(shipX), fy-7, float32(shipX+7), fy, 1.4, hudGreen, false)
-			vector.StrokeLine(screen, float32(shipX+7), fy, float32(shipX), fy+7, 1.4, hudGreen, false)
-			vector.StrokeLine(screen, float32(shipX), fy+7, float32(shipX-7), fy, 1.4, hudGreen, false)
-			ui.DrawText(screen, fmt.Sprintf("PAD %.0f km", s.PadDist), shipX+14, py-4, 0.7)
+			fx, fy := float32(px), float32(py)
+			vector.StrokeLine(screen, fx-7, fy, fx, fy-7, 1.4, hudGreen, false)
+			vector.StrokeLine(screen, fx, fy-7, fx+7, fy, 1.4, hudGreen, false)
+			vector.StrokeLine(screen, fx+7, fy, fx, fy+7, 1.4, hudGreen, false)
+			vector.StrokeLine(screen, fx, fy+7, fx-7, fy, 1.4, hudGreen, false)
+			ui.DrawText(screen, fmt.Sprintf("%sPAD %.0f km%s", pinned, s.PadDist, pinned),
+				px+14, py-4, 0.7)
 		}
 	}
 	// the dots: the projected positions all the way to the landing goal,
@@ -1661,6 +1672,68 @@ func (a *App) drawTrajProjection(screen *ebiten.Image, hy float64) {
 		vector.StrokeCircle(screen, float32(shipX), float32(lastY), 6, 1,
 			premul(hudGreen, 0.85), false)
 		ui.DrawText(screen, label, shipX+12, lastY-4, 0.7)
+	}
+}
+
+// drawSteerDirector is the answer to "which way do I steer": a classic
+// flight-director bug hanging under the HUD reticle — fly TOWARD the bug.
+// It slides left when the pad line is left (roll ←), down when you are
+// shallow (push ↓), and centers when you are on guidance. Big lateral
+// errors also get marching chevrons with the distance, and vertical
+// excursions get UP/DOWN tags, so the correction is readable at a glance
+// from anywhere on the screen.
+func (a *App) drawSteerDirector(screen *ebiten.Image, hy float64) {
+	e, s := a.entry, a.entry.sim
+	if s.Status() != reentry.Flying || e.seamT() > 0.6 {
+		return
+	}
+	cr := s.Crossrange // km, + = right of the pad line → steer left
+	errW := s.GammaError() / math.Max(s.Width, 0.01)
+
+	// the bug
+	bx := shipX + math.Min(math.Max(-cr*13, -120), 120)
+	by := hy + 26 + math.Min(math.Max(errW*30, -60), 60)
+	fbx, fby := float32(bx), float32(by)
+	vector.StrokeCircle(screen, fbx, fby, 7, 1.6, hudGreen, false)
+	fastLine(screen, fbx-19, fby, fbx-7, fby, 2, hudGreen, 0.9)
+	fastLine(screen, fbx+7, fby, fbx+19, fby, 2, hudGreen, 0.9)
+	fastLine(screen, fbx, fby-12, fbx, fby-7, 2, hudGreen, 0.9)
+
+	// marching chevrons for the lateral correction
+	chev := func(x, y, dir float64, al float64) {
+		c := premul(hudGreen, al)
+		vector.StrokeLine(screen, float32(x), float32(y-9),
+			float32(x+dir*10), float32(y), 2, c, false)
+		vector.StrokeLine(screen, float32(x+dir*10), float32(y),
+			float32(x), float32(y+9), 2, c, false)
+	}
+	if math.Abs(cr) > 1.5 {
+		dir := 1.0 // steer right
+		label := "STEER RIGHT"
+		if cr > 0 {
+			dir, label = -1, "STEER LEFT"
+		}
+		n := 1 + int(math.Min(math.Abs(cr)/5, 2))
+		cxr := shipX + dir*168
+		for i := 0; i < n; i++ {
+			march := 0.45 + 0.55*math.Abs(math.Sin(s.T*4-float64(i)*0.9))
+			chev(cxr+dir*float64(i)*14, hy+26, dir, march)
+		}
+		txt := fmt.Sprintf("%s %.1f km", label, math.Abs(cr))
+		tx := cxr + dir*float64(n)*14 + 12
+		if dir < 0 {
+			tx = cxr + dir*float64(n)*14 - float64(len(txt))*7 - 12
+		}
+		ui.DrawText(screen, txt, tx, hy+20, 0.85)
+	}
+	// vertical tags on the bug when the needle is out of the band
+	if errW > 1 {
+		ui.DrawText(screen, "DOWN", bx-14, by+14, 0.8)
+	} else if errW < -1 {
+		ui.DrawText(screen, "UP", bx-7, by-30, 0.8)
+	}
+	if math.Abs(cr) <= 1.5 && math.Abs(errW) <= 0.6 {
+		ui.DrawText(screen, "ON GUIDANCE", shipX-38, hy+46, 0.6)
 	}
 }
 
@@ -2211,7 +2284,14 @@ func (a *App) drawEntryGauges(screen *ebiten.Image) {
 	vector.DrawFilledRect(screen, float32(nx), float32(py+120), float32(nw), 8, colPanel, false)
 	vector.StrokeLine(screen, float32(mid), float32(py+118), float32(mid), float32(py+130), 1, colDim, false)
 	vector.DrawFilledCircle(screen, float32(mid+cs*nw/2), float32(py+124), 4, colN2, false)
-	ui.DrawText(screen, fmt.Sprintf("CROSSRANGE %+.1f km", s.Crossrange), nx, py+134, 0.8)
+	steerHint := ""
+	if s.Crossrange > 1.5 {
+		steerHint = "  << steer left"
+	} else if s.Crossrange < -1.5 {
+		steerHint = "  steer right >>"
+	}
+	ui.DrawText(screen, fmt.Sprintf("CROSSRANGE %+.1f km%s", s.Crossrange, steerHint),
+		nx, py+134, 0.8)
 
 	// right: budgets — the grid's ledger rides next to the lithium's
 	bx := 640.0

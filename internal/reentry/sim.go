@@ -29,8 +29,12 @@ type Vehicle struct {
 // plasma aeroshell is what makes a 350 t freighter flyable at all.
 func Yodacon() Vehicle {
 	return Vehicle{
-		Mass: 350e3, RefMass: 350e3, Diameter: 40, NoseRadius: 12, LDMax: 0.35,
-		GlideLD:  1.0, // five by five: the wing shape glides 5:5
+		Mass: 350e3, RefMass: 350e3, Diameter: 40, NoseRadius: 12,
+		// the cone commands more lift than the early builds dared: real
+		// pitch authority in the plasma phase, and a fatter glide ratio
+		// once the airframe takes it
+		LDMax:    0.48,
+		GlideLD:  1.15,
 		TPSLimit: 60e4, GLimit: 6, CoilField: 1.2, LiTank: 60,
 		RCSTank: 130, PowerCap: 4e6,
 	}
@@ -160,6 +164,11 @@ type Sim struct {
 	recoveryT  float64 // seconds of override remaining
 	recoveryCD float64 // lockout before the reflex can trip again
 
+	// gamRate is last step's flight-path-angle rate, rad/s — the input to
+	// the stability augmentation that damps the phugoid.
+	gamRate   float64
+	prevGamma float64
+
 	auto autoland
 	rng  *rand.Rand
 }
@@ -183,6 +192,7 @@ func New(veh Vehicle, prof Profile, seed int64) *Sim {
 		rng:        rand.New(rand.NewSource(seed)),
 	}
 	s.Gamma = s.RefGamma(s.H) * math.Pi / 180
+	s.prevGamma = s.Gamma
 	s.PadDist = 1600
 	s.Pt = stateAt(s.H, s.V, veh, prof, veh.CoilField, 0)
 	s.RefG = s.RefGamma(s.H)
@@ -356,6 +366,10 @@ func (s *Sim) Step(dt float64, c Controls) {
 	ldMax := s.Veh.LDMax + (s.Veh.GlideLD-s.Veh.LDMax)*math.Min(s.AeroAuth*1.2, 1)
 	ld := pitch * ldMax * (0.55 + 0.45*grip) * rcsAuth
 	ldVert := ld * (1 - 0.4*math.Abs(roll))
+	// stability augmentation: the flight computer opposes pitch RATE, so
+	// the stick commands an attitude instead of feeding the phugoid — a
+	// centered stick now means a steady needle, not a slow oscillation
+	ldVert += math.Min(math.Max(-s.gamRate*26, -0.16), 0.16) * grip
 	s.LastLD = ldVert
 
 	// crossrange walk: the cone steers where the plasma grips, the airframe
@@ -397,6 +411,9 @@ func (s *Sim) Step(dt float64, c Controls) {
 	d := 0.5 * rho * s.V * s.V * sArea * cd0 * dragF
 	l := 0.5 * rho * s.V * s.V * sArea * cd0 * ldVert
 	s.Pt.GLoad = math.Sqrt(d*d+l*l) / (s.Veh.Mass * g0)
+
+	s.gamRate = (s.Gamma - s.prevGamma) / dt
+	s.prevGamma = s.Gamma
 
 	s.RefG = s.RefGamma(s.H)
 	s.Width = s.CorridorWidth(s.H)
