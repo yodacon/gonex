@@ -22,6 +22,8 @@ import (
 type fxlabState struct {
 	bow, cloud *fx.Fire
 	prom       *promLayer
+	promOut    *promLayer
+	ions       *ionFlow
 	qFrac      float64 // sheath heat fraction — feeds the plasma fire
 	mach       float64
 	feed       float64 // lithium feed fraction
@@ -31,23 +33,26 @@ type fxlabState struct {
 	showBow    bool
 	showCloud  bool
 	showProm   bool
+	showDiam   bool
 	t          float64
 }
 
 func (a *App) startFxLab() {
 	a.fxlab = &fxlabState{
-		bow:   fx.NewFire(44, 13, 42),
-		cloud: fx.NewFire(36, 9, 43),
-		prom:  newPromLayer(44, 46),
-		qFrac: 0.6, mach: 12, feed: 0.4, standoff: 1.6, aero: 0.3,
-		showBow: true, showCloud: true, showProm: true,
+		bow:     fx.NewFire(44, 13, 42),
+		cloud:   fx.NewFire(36, 9, 43),
+		prom:    newPromLayer(44, 72),
+		promOut: newOuterPromLayer(45, 96),
+		ions:    newIonFlow(46, 950),
+		qFrac:   0.6, mach: 12, feed: 0.4, standoff: 1.6, aero: 0.3,
+		showBow: true, showCloud: true, showProm: true, showDiam: true,
 	}
 	a.fxlab.cloud.Cooling = 0.988
 	a.mode = modeFxLab
 	a.hideMenu()
 	a.miniMapWin.Visible, a.hudWin.Visible, a.targetWin.Visible = false, false, false
 	a.fullMapWin.Visible, a.galaxyWin.Visible = false, false
-	a.Console.Notifyf("FX LAB — Q/A heat · W/S mach · E/D feed · R/F standoff · T/G aero · arrows steer · 1/2 toggle layers · SPC burst")
+	a.Console.Notifyf("FX LAB — Q/A heat · W/S mach · E/D feed · R/F standoff · T/G aero · arrows steer · 1-4 toggle layers · SPC burst")
 }
 
 // knob nudges a parameter with a key pair, clamped.
@@ -86,9 +91,14 @@ func (a *App) updateFxLab() {
 	if inpututil.IsKeyJustPressed(ebiten.KeyDigit3) {
 		l.showProm = !l.showProm
 	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyDigit4) {
+		l.showDiam = !l.showDiam
+	}
 	if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
 		l.bow.Boost(0.5)
 		l.prom.Boost(0.5)
+		l.promOut.Boost(0.5)
+		l.ions.Boost(0.5)
 	}
 
 	// feed the grids exactly the way updatePlasma does
@@ -104,6 +114,14 @@ func (a *App) updateFxLab() {
 	l.cloud.Sweep = -l.roll * 1.4
 	l.cloud.Step(dt)
 	l.prom.step(dt, math.Min(l.qFrac*1.5, 1))
+	l.promOut.step(dt, math.Min(l.qFrac*1.5, 1))
+	nose := shipY - 46.0
+	standPx := 16 + 22*(l.standoff-1)
+	cx := shipX - l.bank*30
+	l.ions.step(dt, math.Min(l.qFrac*1.5, 1), bowGeom{
+		cx: cx, nose: nose, standPx: standPx,
+		roll: l.roll, alpha: 1, t: l.t,
+	}, cx-230-l.roll*220, nose-260)
 }
 
 func (a *App) drawFxLab(screen *ebiten.Image) {
@@ -112,6 +130,19 @@ func (a *App) drawFxLab(screen *ebiten.Image) {
 	standPx := 16 + 22*(l.standoff-1)
 	cx := shipX - l.bank*30
 
+	// far to near: ion flow, outer lobes, bow fire, inner fan
+	if l.showDiam {
+		l.ions.draw(screen, bowGeom{
+			cx: cx, nose: nose, standPx: standPx,
+			roll: l.roll, alpha: 1, t: l.t,
+		}, math.Min(l.qFrac*1.5, 1))
+	}
+	if l.showProm {
+		l.promOut.draw(screen, bowGeom{
+			cx: cx, nose: nose, standPx: standPx,
+			roll: l.roll, alpha: 1, t: l.t,
+		}, math.Min(l.qFrac*1.5, 1))
+	}
 	if l.showBow {
 		drawBowFire(screen, l.bow, bowGeom{
 			cx: cx, nose: nose, standPx: standPx,
@@ -144,7 +175,8 @@ func (a *App) drawFxLab(screen *ebiten.Image) {
 		fmt.Sprintf("R/F  standoff  %.2f", l.standoff),
 		fmt.Sprintf("T/G  aero auth %.2f", l.aero),
 		fmt.Sprintf("<->  roll      %+.2f", l.roll),
-		fmt.Sprintf("1/2/3 bow %v · cloud %v · prom %v", l.showBow, l.showCloud, l.showProm),
+		fmt.Sprintf("1/2/3/4 bow %v · cloud %v · prom %v · ions %v",
+			l.showBow, l.showCloud, l.showProm, l.showDiam),
 		"SPC  pellet burst",
 	}
 	vector.DrawFilledRect(screen, 16, 60, 250, float32(18*len(rows)+20),

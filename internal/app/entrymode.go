@@ -181,6 +181,13 @@ type entryState struct {
 	// composited through its own offscreen at partial alpha
 	prom *promLayer
 
+	// the outer magnetosphere: a second, vaster wave of lobes off the
+	// secondary bow shell twice as far out, and the ion flow — the
+	// oncoming plasma simulated as particles off the horizon, whose
+	// pileups ARE the diamonds and the double bow — far to near
+	promOut *promLayer
+	ions    *ionFlow
+
 	// expected is the reference profile: the same seed's autoland, flown
 	// headless at entry start — the h–V line the corridor monitor plots
 	// the live trace against, exactly the console prototype's h–V plane
@@ -356,7 +363,9 @@ func (a *App) startEntry(stellarID int) {
 		finalT: -1, appRange: -1,
 		bowFire:   fx.NewFire(44, 13, seed),
 		machCloud: fx.NewFire(36, 9, seed+1),
-		prom:      newPromLayer(seed+2, 46),
+		prom:      newPromLayer(seed+2, 72),
+		promOut:   newOuterPromLayer(seed+3, 96),
+		ions:      newIonFlow(seed+4, 950),
 		expected:  flyExpected(veh, prof, seed),
 	}
 	e.machCloud.Cooling = 0.988 // condensation lingers; plasma doesn't
@@ -818,14 +827,27 @@ func (a *App) updatePlasma(c reentry.Controls) {
 	if c.Burst {
 		e.bowFire.Boost(0.5)
 		e.prom.Boost(0.5)
+		e.promOut.Boost(0.5)
+		e.ions.Boost(0.5)
 	}
 	if s.Boosting() {
 		e.bowFire.Boost(0.06)
 	}
 	e.bowFire.Step(dt)
-	// the prominence fan breathes on the same heat the fire eats, and dies
-	// with the plasma phase — the aero handoff takes the filaments too
+	// the prominence fans breathe on the same heat the fire eats, and die
+	// with the plasma phase — the aero handoff takes the filaments too,
+	// inner and outer, and starves the ion flow with them
 	e.prom.step(dt, e.promHeat())
+	e.promOut.step(dt, e.promHeat())
+	// the ion flow: spawned at the trajectory's vanishing point under the
+	// horizon, hung off to the side like the chase-plane shots and leaned
+	// further by the crossrange steer and the roll
+	tvpX := cx - 160 - e.roll*220 -
+		math.Max(-160, math.Min(160, s.Crossrange*14))
+	e.ions.step(dt, e.promHeat(), bowGeom{
+		cx: cx, nose: nose, standPx: standPx,
+		roll: e.roll, alpha: 1, t: s.T,
+	}, tvpX, e.horizonY()+24)
 	// the Mach-speed bow wave: white condensation, volumetric, owned by
 	// the aero phase — it condenses where the air is dense and the ship
 	// is supersonic, and takes over exactly as the plasma lets go
@@ -1465,6 +1487,20 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 		if py < gaugeTop+120 {
 			glowDot(screen, float32(px), float32(py), float32(r), col, al)
 		}
+	}
+	// the oncoming plasma, far to near: the ion flow streaming in off the
+	// horizon (its pileups are the diamonds and the double bow), then the
+	// outer wave of lobes off the secondary shell — both ahead of the bow
+	// fire, so the near layers paint over
+	if s.V > 900 {
+		e.ions.draw(screen, bowGeom{
+			cx: shipX - e.bank*30, nose: nose, standPx: standPx,
+			roll: e.roll, alpha: 1, t: s.T,
+		}, e.promHeat())
+		e.promOut.draw(screen, bowGeom{
+			cx: shipX - e.bank*30, nose: nose, standPx: standPx,
+			roll: e.roll, alpha: 1, t: s.T,
+		}, e.promHeat())
 	}
 	// the plasma bow wave proper: the fire grid bent along the shell,
 	// burning UNDER the mirror line — the sheath the ship pushes ahead

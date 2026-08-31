@@ -58,7 +58,19 @@ type promLayer struct {
 	rng   *rand.Rand
 	t     float64
 	surge float64 // pellet-burst brightness kick, decaying
+
+	// layer shape — 1/1/0/1 is the inner fan; the outer magnetosphere
+	// instance runs the same fountain on a vaster shell
+	geo     float64 // shell standoff/radius multiplier
+	reach   float64 // filament length multiplier
+	stretch float64 // 0 radial fan .. 1 lobes dragged flat to the sides
+	veil    float64 // composite alpha multiplier
 }
+
+// promOuterGeo is the secondary shell's standoff ratio over the primary —
+// shared by the outer prominence layer and the ion flow's mirror shells,
+// so the second wave of lobes and the double bow pileup stand together.
+const promOuterGeo = 2.15
 
 // The H-alpha ramp, base → crown. Stop 0 is the images' electric limb band.
 var promStops = [5]color.RGBA{
@@ -89,7 +101,8 @@ func promRamp(t float64) color.RGBA {
 }
 
 func newPromLayer(seed int64, n int) *promLayer {
-	p := &promLayer{rng: rand.New(rand.NewSource(seed))}
+	p := &promLayer{rng: rand.New(rand.NewSource(seed)),
+		geo: 1, reach: 1, stretch: 0, veil: 1}
 	p.fil = make([]promFil, n)
 	for i := range p.fil {
 		p.rollFil(&p.fil[i])
@@ -100,6 +113,16 @@ func newPromLayer(seed int64, n int) *promLayer {
 		p.rollWisp(&p.wisps[i])
 		p.wisps[i].life = p.rng.Float64() * p.wisps[i].span
 	}
+	return p
+}
+
+// newOuterPromLayer is the second wave of lobes: the same fountain run on
+// the secondary bow shell, twice as far out, with the filaments dragged
+// flat to the sides — the vast outer magnetosphere the inner fan sits
+// inside. It composites a little fainter, so distance reads as thinness.
+func newOuterPromLayer(seed int64, n int) *promLayer {
+	p := newPromLayer(seed, n)
+	p.geo, p.reach, p.stretch, p.veil = promOuterGeo, 2.1, 0.8, 0.72
 	return p
 }
 
@@ -179,7 +202,8 @@ func (p *promLayer) draw(dst *ebiten.Image, g bowGeom, heat float64) {
 	img := p.img
 	img.Clear()
 
-	rx0 := 40 + g.standPx*0.85
+	sp := g.standPx * p.geo
+	rx0 := (40 + g.standPx*0.85) * p.geo
 	lobe := -g.roll
 	rollAbs := math.Abs(g.roll)
 	arcPt := func(u float64) (x, y, ang float64) {
@@ -187,15 +211,15 @@ func (p *promLayer) draw(dst *ebiten.Image, g bowGeom, heat float64) {
 		side := math.Sin(ang)
 		swell := 1 + 0.22*math.Max(0, lobe*side)*rollAbs
 		x = g.cx + side*rx0*swell
-		y = g.nose - g.standPx*swell + (1-math.Cos(ang))*g.standPx*0.75
+		y = g.nose - sp*swell + (1-math.Cos(ang))*sp*0.75
 		return
 	}
 
 	// the deep maroon ambient the filaments hang in — held ABOVE the shell
 	// so it reads as the fan's sky, not a shadow dome over the ground
-	glowDot(img, float32(g.cx), float32(g.nose-g.standPx-95), 220,
+	glowDot(img, float32(g.cx), float32(g.nose-sp-95*p.geo), float32(220*p.geo),
 		color.RGBA{120, 26, 8, 255}, 0.26*heat)
-	glowDot(img, float32(g.cx), float32(g.nose-g.standPx-45), 140,
+	glowDot(img, float32(g.cx), float32(g.nose-sp-45*p.geo), float32(140*p.geo),
 		color.RGBA{168, 52, 12, 255}, 0.22*heat)
 
 	// the electric base band along the shell — the limb the fan stands on,
@@ -221,13 +245,15 @@ func (p *promLayer) draw(dst *ebiten.Image, g bowGeom, heat float64) {
 			bx, by, ang := arcPt(f.u)
 			// outward off the shell plus the filament's own splay, the
 			// whole fan dragging with the sweep
-			fa := ang + f.splay
-			dx := math.Sin(fa)*0.9 - g.roll*0.55
+			// stretch drags the direction flat to the sides — the outer
+			// layer's lobes pulled outboard off the secondary shell
+			fa := ang + f.splay*(1+0.6*p.stretch)
+			dx := math.Sin(fa)*(0.9+2.2*p.stretch) - g.roll*0.55*(1+p.stretch)
 			dy := -math.Cos(fa)
 			il := 1 / math.Hypot(dx, dy)
 			dx, dy = dx*il, dy*il
 			perpX, perpY := -dy, dx
-			L := f.length * grow * (0.55 + 0.45*heat)
+			L := f.length * p.reach * grow * (0.55 + 0.45*heat)
 			const segs = 11
 			var lxp, lyp float64
 			for si := 0; si <= segs; si++ {
@@ -236,8 +262,9 @@ func (p *promLayer) draw(dst *ebiten.Image, g bowGeom, heat float64) {
 				// the fan folds against the dark in the reference frames
 				cb := s * s
 				sway := math.Sin(p.t*f.swayW+f.swayPh+s*2.8) * 7 * s
-				x := bx + dx*L*s + perpX*(f.curl*cb+sway)
-				y := by + dy*L*s + perpY*(f.curl*cb+sway) + cb*L*0.30
+				curl := f.curl * (1 + 0.9*p.stretch)
+				x := bx + dx*L*s + perpX*(curl*cb+sway)
+				y := by + dy*L*s + perpY*(curl*cb+sway) + cb*L*0.30
 				if si > 0 {
 					// the streaming brightness: a wave of plasma riding
 					// outward along the line
@@ -283,7 +310,7 @@ func (p *promLayer) draw(dst *ebiten.Image, g bowGeom, heat float64) {
 		ty := math.Abs(math.Sin(ang)) * 0.9
 		il := 1 / math.Hypot(tx, ty)
 		tx, ty = tx*il*w.side, ty*il
-		ln := 16 + 26*math.Abs(w.arc)
+		ln := (16 + 26*math.Abs(w.arc)) * p.geo
 		col := promRamp(0.25 + 0.5*math.Abs(w.arc))
 		fastLine(img, float32(x0-tx*ln), float32(y0-ty*ln),
 			float32(x0), float32(y0), 2.2, col, 0.30*fade*heat*g.alpha)
@@ -292,6 +319,6 @@ func (p *promLayer) draw(dst *ebiten.Image, g bowGeom, heat float64) {
 
 	// composite: the one translucent pass — the alpha layer over the scene
 	op := &ebiten.DrawImageOptions{}
-	op.ColorScale.ScaleAlpha(float32(math.Min(0.50+0.32*heat, 0.85)))
+	op.ColorScale.ScaleAlpha(float32(math.Min(0.50+0.32*heat, 0.85) * p.veil))
 	dst.DrawImage(img, op)
 }

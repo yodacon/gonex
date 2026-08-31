@@ -39,6 +39,8 @@ type takeoffState struct {
 	port      *city.Port
 	nebula    []nebBlob
 	prom      *promLayer // the ascent sheath: the prominence fan off the nose
+	promOut   *promLayer // the outer wave of lobes, twice as far off the nose
+	ions      *ionFlow
 }
 
 // ascentHeat is the climb's sheath envelope: nothing in the thick air,
@@ -53,7 +55,9 @@ func (a *App) startTakeoff(stellarID int) {
 	ts := &takeoffState{stellar: stellarID, h: 0.028,
 		port:      city.Generate(int64(stellarID) * 7919),
 		dayPhase0: math.Mod(float64(a.voy.Day)*0.37+float64(stellarID%7)*0.11+0.05, 1),
-		prom:      newPromLayer(a.voy.Rng.Int63(), 36)}
+		prom:      newPromLayer(a.voy.Rng.Int63(), 52),
+		promOut:   newOuterPromLayer(a.voy.Rng.Int63(), 64),
+		ions:      newIonFlow(a.voy.Rng.Int63(), 700)}
 	nebCols := []color.RGBA{{150, 96, 205, 255}, {84, 178, 190, 255},
 		{190, 110, 170, 255}, {96, 120, 210, 255}}
 	for i := 0; i < 8; i++ {
@@ -89,6 +93,14 @@ func (a *App) updateTakeoff() {
 		ts.roll += ts.v * dt * 0.25 // ground track falls behind
 	}
 	ts.prom.step(dt, ts.ascentHeat())
+	ts.promOut.step(dt, ts.ascentHeat())
+	// the climb's ion flow falls from the darkening sky up the departure
+	// line, off toward the horizon rather than straight overhead
+	heat := ts.ascentHeat()
+	ts.ions.step(dt, heat, bowGeom{
+		cx: shipX, nose: 494, standPx: 9 + 13*heat,
+		roll: 0, alpha: 1, t: ts.t,
+	}, shipX-190, 300+ts.gam*8-60)
 	if ts.t >= takeoffDur {
 		a.takeoff = nil
 		a.mode = modeFlight
@@ -156,6 +168,16 @@ func (a *App) drawTakeoff(screen *ebiten.Image) {
 		standPx := 9 + 13*heat
 		glowDot(screen, shipX, float32(nose-standPx*0.5), float32(50+standPx),
 			color.RGBA{255, 200, 130, 255}, 0.28*heat)
+		// far to near: the diamond train up the climb line, the outer
+		// lobes, then the inner fan on the nose
+		ts.ions.draw(screen, bowGeom{
+			cx: shipX, nose: nose, standPx: standPx,
+			roll: 0, alpha: 1, t: ts.t,
+		}, heat)
+		ts.promOut.draw(screen, bowGeom{
+			cx: shipX, nose: nose, standPx: standPx,
+			roll: 0, alpha: 1, t: ts.t,
+		}, heat)
 		ts.prom.draw(screen, bowGeom{
 			cx: shipX, nose: nose, standPx: standPx,
 			roll: 0, alpha: 1, t: ts.t,
