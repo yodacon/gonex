@@ -38,12 +38,22 @@ type takeoffState struct {
 	dayPhase0 float64 // the sun's clock at throttle-up
 	port      *city.Port
 	nebula    []nebBlob
+	prom      *promLayer // the ascent sheath: the prominence fan off the nose
+}
+
+// ascentHeat is the climb's sheath envelope: nothing in the thick air,
+// full fire punching through the upper atmosphere, gone by the black sky —
+// the entry's plasma phase run backwards in a quarter of the time.
+func (ts *takeoffState) ascentHeat() float64 {
+	return math.Min(math.Max((ts.h-16)/12, 0), 1) *
+		math.Min(math.Max((118-ts.h)/30, 0), 1)
 }
 
 func (a *App) startTakeoff(stellarID int) {
 	ts := &takeoffState{stellar: stellarID, h: 0.028,
 		port:      city.Generate(int64(stellarID) * 7919),
-		dayPhase0: math.Mod(float64(a.voy.Day)*0.37+float64(stellarID%7)*0.11+0.05, 1)}
+		dayPhase0: math.Mod(float64(a.voy.Day)*0.37+float64(stellarID%7)*0.11+0.05, 1),
+		prom:      newPromLayer(a.voy.Rng.Int63(), 36)}
 	nebCols := []color.RGBA{{150, 96, 205, 255}, {84, 178, 190, 255},
 		{190, 110, 170, 255}, {96, 120, 210, 255}}
 	for i := 0; i < 8; i++ {
@@ -78,6 +88,7 @@ func (a *App) updateTakeoff() {
 		ts.v = math.Min(0.35+ct*1.1, 8.35)
 		ts.roll += ts.v * dt * 0.25 // ground track falls behind
 	}
+	ts.prom.step(dt, ts.ascentHeat())
 	if ts.t >= takeoffDur {
 		a.takeoff = nil
 		a.mode = modeFlight
@@ -135,6 +146,20 @@ func (a *App) drawTakeoff(screen *ebiten.Image) {
 		vector.DrawFilledCircle(screen, shipX, float32(596+i*14),
 			float32((9-float64(i)*2.4)*throttle*fl),
 			premul(color.RGBA{255, 170, 70, 255}, 0.55*throttle*fl), false)
+	}
+
+	// the ascent sheath: the same prominence fan the entry flies, run
+	// backwards — igniting on the nose as the ship punches the upper
+	// atmosphere, then dying into the black sky as orbit takes over
+	if heat := ts.ascentHeat(); heat > 0.03 {
+		nose := 494.0
+		standPx := 9 + 13*heat
+		glowDot(screen, shipX, float32(nose-standPx*0.5), float32(50+standPx),
+			color.RGBA{255, 200, 130, 255}, 0.28*heat)
+		ts.prom.draw(screen, bowGeom{
+			cx: shipX, nose: nose, standPx: standPx,
+			roll: 0, alpha: 1, t: ts.t,
+		}, heat)
 	}
 
 	// the callouts, in phase order

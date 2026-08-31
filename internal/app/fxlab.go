@@ -21,6 +21,7 @@ import (
 
 type fxlabState struct {
 	bow, cloud *fx.Fire
+	prom       *promLayer
 	qFrac      float64 // sheath heat fraction — feeds the plasma fire
 	mach       float64
 	feed       float64 // lithium feed fraction
@@ -29,6 +30,7 @@ type fxlabState struct {
 	roll, bank float64
 	showBow    bool
 	showCloud  bool
+	showProm   bool
 	t          float64
 }
 
@@ -36,8 +38,9 @@ func (a *App) startFxLab() {
 	a.fxlab = &fxlabState{
 		bow:   fx.NewFire(44, 13, 42),
 		cloud: fx.NewFire(36, 9, 43),
+		prom:  newPromLayer(44, 46),
 		qFrac: 0.6, mach: 12, feed: 0.4, standoff: 1.6, aero: 0.3,
-		showBow: true, showCloud: true,
+		showBow: true, showCloud: true, showProm: true,
 	}
 	a.fxlab.cloud.Cooling = 0.988
 	a.mode = modeFxLab
@@ -80,8 +83,12 @@ func (a *App) updateFxLab() {
 	if inpututil.IsKeyJustPressed(ebiten.KeyDigit2) {
 		l.showCloud = !l.showCloud
 	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyDigit3) {
+		l.showProm = !l.showProm
+	}
 	if inpututil.IsKeyJustPressed(ebiten.KeySpace) {
 		l.bow.Boost(0.5)
+		l.prom.Boost(0.5)
 	}
 
 	// feed the grids exactly the way updatePlasma does
@@ -96,6 +103,7 @@ func (a *App) updateFxLab() {
 	l.cloud.Fuel = l.aero * math.Min(math.Max((l.mach-0.85)/0.4, 0), 1)
 	l.cloud.Sweep = -l.roll * 1.4
 	l.cloud.Step(dt)
+	l.prom.step(dt, math.Min(l.qFrac*1.5, 1))
 }
 
 func (a *App) drawFxLab(screen *ebiten.Image) {
@@ -109,6 +117,12 @@ func (a *App) drawFxLab(screen *ebiten.Image) {
 			cx: cx, nose: nose, standPx: standPx,
 			roll: l.roll, alpha: 0.5 + 0.5*math.Min(l.qFrac*2, 1), t: l.t,
 		})
+	}
+	if l.showProm {
+		l.prom.draw(screen, bowGeom{
+			cx: cx, nose: nose, standPx: standPx,
+			roll: l.roll, alpha: 1, t: l.t,
+		}, math.Min(l.qFrac*1.5, 1))
 	}
 	shipImg := a.Catalog.Get(a.Cfg.PlayerShipID).Sprites[0]
 	bb := shipImg.Bounds()
@@ -130,7 +144,7 @@ func (a *App) drawFxLab(screen *ebiten.Image) {
 		fmt.Sprintf("R/F  standoff  %.2f", l.standoff),
 		fmt.Sprintf("T/G  aero auth %.2f", l.aero),
 		fmt.Sprintf("<->  roll      %+.2f", l.roll),
-		fmt.Sprintf("1/2  bow %v · cloud %v", l.showBow, l.showCloud),
+		fmt.Sprintf("1/2/3 bow %v · cloud %v · prom %v", l.showBow, l.showCloud, l.showProm),
 		"SPC  pellet burst",
 	}
 	vector.DrawFilledRect(screen, 16, 60, 250, float32(18*len(rows)+20),

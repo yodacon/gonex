@@ -177,6 +177,10 @@ type entryState struct {
 	bowFire   *fx.Fire
 	machCloud *fx.Fire
 
+	// the H-alpha pass over the bow: the solar-prominence filament fan,
+	// composited through its own offscreen at partial alpha
+	prom *promLayer
+
 	// expected is the reference profile: the same seed's autoland, flown
 	// headless at entry start — the h–V line the corridor monitor plots
 	// the live trace against, exactly the console prototype's h–V plane
@@ -352,6 +356,7 @@ func (a *App) startEntry(stellarID int) {
 		finalT: -1, appRange: -1,
 		bowFire:   fx.NewFire(44, 13, seed),
 		machCloud: fx.NewFire(36, 9, seed+1),
+		prom:      newPromLayer(seed+2, 46),
 		expected:  flyExpected(veh, prof, seed),
 	}
 	e.machCloud.Cooling = 0.988 // condensation lingers; plasma doesn't
@@ -676,6 +681,16 @@ func (a *App) finishEntry() {
 
 // --- scene state ------------------------------------------------------
 
+// promHeat is the prominence fan's drive: sheath heat, mapped so the
+// corridor's ordinary 15-35% flux band still lights a full fan (the layer
+// is the plasma phase's signature, not a redline warning), gated by the
+// plasma authority so the aero handoff takes it away.
+func (e *entryState) promHeat() float64 {
+	s := e.sim
+	qFrac := s.Pt.QShielded / s.Veh.TPSLimit
+	return math.Min(qFrac*3.2, 1) * math.Min(s.PlasmaAuth*1.6, 1)
+}
+
 // seamT is the orbital→glideslope seam: 0 anywhere on the corridor, 1 at
 // the parking threshold — where the entry frame must EQUAL the ILS
 // final's first frame, so the handoff has no cut at all.
@@ -802,11 +817,15 @@ func (a *App) updatePlasma(c reentry.Controls) {
 	}
 	if c.Burst {
 		e.bowFire.Boost(0.5)
+		e.prom.Boost(0.5)
 	}
 	if s.Boosting() {
 		e.bowFire.Boost(0.06)
 	}
 	e.bowFire.Step(dt)
+	// the prominence fan breathes on the same heat the fire eats, and dies
+	// with the plasma phase — the aero handoff takes the filaments too
+	e.prom.step(dt, e.promHeat())
 	// the Mach-speed bow wave: white condensation, volumetric, owned by
 	// the aero phase — it condenses where the air is dense and the ship
 	// is supersonic, and takes over exactly as the plasma lets go
@@ -1453,6 +1472,14 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 		cx: shipX - e.bank*30, nose: nose, standPx: standPx,
 		roll: e.roll, alpha: 0.5 + 0.5*math.Min(qFrac*2, 1), t: s.T,
 	})
+	// the prominence pass over the fire: the filament fan through its own
+	// semi-transparent layer, gone with the plasma authority
+	if s.V > 900 {
+		e.prom.draw(screen, bowGeom{
+			cx: shipX - e.bank*30, nose: nose, standPx: standPx,
+			roll: e.roll, alpha: 1, t: s.T,
+		}, e.promHeat())
+	}
 	prev = false
 	for i := 0; i <= 22; i++ {
 		ang := -1.25 + 2.5*float64(i)/22
