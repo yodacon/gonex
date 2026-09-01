@@ -469,6 +469,28 @@ func (s *Sim) accrueDamage(dt float64) {
 	s.Dmg.Clamps = math.Min(s.Dmg.Clamps, 100)
 }
 
+// AdviseFeed returns the least lithium feed (kg/s) that holds the
+// shielded stagnation flux at or under target·TPSLimit at the current
+// state — the seed-economy number. The MHD gate is Q/(1+Q): past the
+// knee, extra electrons buy almost no extra coupling, so every gram over
+// the advised rate is lithium spent on nothing. Feeding under it while
+// the sheath is hot is hull spent instead. The gauge caret between the
+// two is the optimal-consumption line the debrief pays out on.
+func (s *Sim) AdviseFeed(target float64) float64 {
+	b := s.Veh.CoilField
+	if s.boostTimer > 0 {
+		b *= 1.8
+	}
+	goal := target * s.Veh.TPSLimit
+	for i := 0; i <= 10; i++ {
+		f := maxFeed * float64(i) / 10
+		if stateAt(s.H, s.V, s.Veh, s.Prof, b, f).QShielded <= goal {
+			return f
+		}
+	}
+	return maxFeed
+}
+
 // SkipWarn reports how close the entry is to skipping out, 0..1 — the HUD
 // flashes CORRIDOR ABORT as it fills.
 func (s *Sim) SkipWarn() float64 { return math.Min(s.skipT/8, 1) }

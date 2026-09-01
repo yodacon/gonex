@@ -224,6 +224,16 @@ type entryState struct {
 	// console prototype's chart row fed live — heating, authority, power
 	rec   []recSample
 	recCD float64
+
+	// the sky algebra: which of the console's six flow tabs is touring,
+	// which block of it, and the seed-economy advisor's answer
+	algOpen    bool
+	algTab     int
+	algBlock   int
+	algT       float64
+	algManualT float64
+	optFeed    float64 // kg/s, from Sim.AdviseFeed
+	feedCD     float64
 }
 
 // recSample is one tick of the console-chart flight recorder.
@@ -428,6 +438,7 @@ func (a *App) startEntry(stellarID int) {
 	if a.demoStellar > 0 {
 		e.auto = true // the scripted pilot trusts the computer
 	}
+	e.initAlgebra()
 	a.entry = e
 	a.mode = modeEntry
 	a.miniMapWin.Visible, a.hudWin.Visible, a.targetWin.Visible = false, false, false
@@ -512,6 +523,7 @@ func (a *App) updateEntry() {
 		a.voy.Lithium = s.Li
 		a.voy.RCSFuel = s.RCS
 		a.updateStage()
+		a.updateAlgebra()
 
 		// the flight recorder ticks on the sim clock
 		if e.recCD -= dt * entryTimeScale; e.recCD <= 0 {
@@ -1687,11 +1699,11 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 	a.drawConsoleCharts(screen)
 	a.drawILSSide(screen)
 	a.drawStageBanner(screen)
-	a.drawLiveAlgebra(screen)
 	a.drawEntryHud(screen, hy) // the landing HUD flies the whole sequence
 	a.drawTrajProjection(screen, hy)
 	a.drawSteerDirector(screen, hy)
 	a.drawBurnWarnings(screen)
+	a.drawAlgebraSky(screen, hy) // the algebra, written on the black sky
 
 	// deorbit plasma white-in
 	if e.flash > 0 {
@@ -2385,6 +2397,7 @@ func (a *App) drawEntryGauges(screen *ebiten.Image) {
 	st := stageTable[e.stage]
 	ui.DrawTextScaled(screen, "STAGE  "+st.name, x, py+138, 1, st.col, 1)
 	ui.DrawText(screen, st.hint, x, py+156, 0.7)
+	ui.DrawText(screen, "TAB - live algebra   1-6 tabs", 452, py+156, 0.5)
 
 	// center: the corridor needle — γ error against the narrowing band
 	nx, nw := 260.0, 320.0
@@ -2428,7 +2441,21 @@ func (a *App) drawEntryGauges(screen *ebiten.Image) {
 	if e.auto {
 		feedShow = s.FeedUsed / 0.2
 	}
-	hbar(screen, bx, py+30, 180, feedShow, colLi, fmt.Sprintf("LI FEED %3.0f g/s  [ ]", s.FeedUsed*1000))
+	// the seed-economy verdict rides the feed bar's own label: over the
+	// advisor with the gate saturated is lithium bought for nothing;
+	// under it with the sheath hot is hull spent instead
+	feedTag := ""
+	if s.Pt.Gate > 0.9 && s.FeedUsed > e.optFeed+0.02 {
+		feedTag = "  WASTE"
+	} else if s.Pt.QShielded > 0.55*s.Veh.TPSLimit && s.FeedUsed < e.optFeed-0.02 {
+		feedTag = "  STARVED"
+	}
+	hbar(screen, bx, py+30, 180, feedShow, colLi,
+		fmt.Sprintf("LI FEED %3.0f g/s  [ ]%s", s.FeedUsed*1000, feedTag))
+	// the advisor's caret: the least feed that holds 60% of the TPS
+	// limit right now — fly the caret, land with lithium to sell
+	ox := float32(bx + 180*math.Min(e.optFeed/0.2, 1))
+	fastLine(screen, ox, float32(py+26), ox, float32(py+44), 2, colPhos, 0.9)
 	hbar(screen, bx, py+60, 180, s.Li/s.Veh.LiTank, colLi, fmt.Sprintf("LI RESERVE %.1f kg", s.Li))
 	if gd := a.voy.Grid; gd != nil {
 		battCol := colOI

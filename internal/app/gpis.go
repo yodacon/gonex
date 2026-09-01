@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"image/color"
 	"math"
+	"os"
+	"strconv"
 
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 
 	"yodacon.org/gonex/internal/reentry"
@@ -525,41 +528,6 @@ func (a *App) drawConsoleCharts(screen *ebiten.Image) {
 		}, pmax, s.Veh.PowerCap, colBad)
 }
 
-// drawLiveAlgebra is the console's numerical-flow tab as a cockpit
-// ticker: the envelope model's own equations, cycled one at a time and
-// computed with this frame's numbers — the proof the gauges are read
-// off running physics, printed where the pilot can watch it run.
-func (a *App) drawLiveAlgebra(screen *ebiten.Image) {
-	e, s := a.entry, a.entry.sim
-	if s.Status() != reentry.Flying {
-		return
-	}
-	p := s.Pt
-	sband := "CLEAR"
-	if p.Fpe > 2.2e9 {
-		sband = "BLACKOUT"
-	}
-	beta := s.Veh.Mass / (1.35 * math.Pi * s.Veh.Diameter * s.Veh.Diameter / 4 *
-		p.DragFactor)
-	lines := []string{
-		fmt.Sprintf("qdot.bare = k sqrt(rho/Rn) V^3 = %.1f W/cm2", p.QBare/1e4),
-		fmt.Sprintf("qdot.shld = qdot.bare sqrt(Rn/Reff) = %.1f W/cm2  (standoff %.2f)",
-			p.QShielded/1e4, p.Standoff),
-		fmt.Sprintf("Q.mhd = sigma B^2 Rn / rho V = %.2f  ->  gate %.2f", p.InteractionQ, p.Gate),
-		fmt.Sprintf("f.pe = 8.98 sqrt(ne) = %.2f GHz  --  S-BAND %s", p.Fpe/1e9, sband),
-		fmt.Sprintf("P = array + cryo + seed = %.1f MW  /  bus cap %.0f MW",
-			p.PowerDraw/1e6, s.Veh.PowerCap/1e6),
-		fmt.Sprintf("beta = m / Cd A = %.0f kg/m2  --  the freighter's ballistic number", beta),
-	}
-	idx := int(s.T/6) % len(lines)
-	txt := "LIVE ALGEBRA  " + lines[idx]
-	x := float64(ScreenW)/2 - float64(len(txt))*3.5
-	fin := math.Min(math.Mod(s.T, 6)*2, 1) // each equation types in
-	ui.DrawTextScaled(screen, txt, x, float64(ScreenH)-16, 1,
-		color.RGBA{63, 216, 224, 255}, float32(0.35+0.5*fin))
-	_ = e
-}
-
 // --- the takeoff's instrument suite ----------------------------------
 
 // takeoffClock is the ascent's wall-clock compression: the twelve-second
@@ -687,5 +655,287 @@ func (a *App) drawTakeoffGauges(screen *ebiten.Image) {
 			float64(side.x)+10, float64(fhy)-7, 1, hudGreen, 1)
 		ui.DrawTextScaled(screen, side.label, float64(side.x)+4, float64(fhy)+16,
 			1, hudGreen, 0.55)
+	}
+}
+
+// --- the live-algebra overlay: the console's six flow tabs, in flight --
+
+// algLine is one row of an algebra tab: a block label, a prose aside,
+// an equation, a substitution, or a result — the console flow tab's
+// exact rhythm, typeset live.
+type algLine struct {
+	kind int // 0 label, 1 prose, 2 equation, 3 substitution, 4 result
+	s    string
+}
+
+var algTabNames = [6]string{"CONCEPT", "FLOW", "HEATING", "PLASMA", "SHIELD", "POWER"}
+
+// initAlgebra arms the sky algebra: on by default — the flight lectures
+// itself on the way down. GONEX_ALG=1..6 pins a tab (the dev hook the
+// documentation screenshots are taken through).
+func (e *entryState) initAlgebra() {
+	e.algOpen = true
+	e.algManualT = -1e18
+	if v := os.Getenv("GONEX_ALG"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 6 {
+			e.algTab, e.algManualT = n-1, 1e18
+		}
+	}
+}
+
+// updateAlgebra advances the sky algebra and the seed-economy advisor.
+// TAB hides the layer; 1-6 pins a tab for a while; left alone it tours
+// every block of every tab across the descent.
+func (a *App) updateAlgebra() {
+	e, s := a.entry, a.entry.sim
+	if inpututil.IsKeyJustPressed(ebiten.KeyTab) {
+		e.algOpen = !e.algOpen
+	}
+	for i := 0; i < 6; i++ {
+		if inpututil.IsKeyJustPressed(ebiten.KeyDigit1 + ebiten.Key(i)) {
+			e.algOpen, e.algTab, e.algManualT = true, i, s.T
+			e.algBlock, e.algT = 0, 0
+		}
+	}
+	const algBlockDur = 6.5
+	if e.algT += dt; e.algT > algBlockDur {
+		e.algT = 0
+		if e.algBlock++; e.algBlock >= 3 {
+			e.algBlock = 0
+			// a manual pick holds its tab for ~30 wall-seconds
+			if s.T-e.algManualT > 30*entryTimeScale {
+				e.algTab = (e.algTab + 1) % 6
+			}
+		}
+	}
+
+	// the seed-economy advisor: re-solved a few times a second
+	if e.feedCD -= dt; e.feedCD <= 0 {
+		e.feedCD = 0.3
+		e.optFeed = s.AdviseFeed(0.6)
+	}
+}
+
+// algebraTab builds one tab's lines with this frame's numbers — the same
+// state the gauges read, walked through the envelope model's equations.
+func (a *App) algebraTab(tab int) []algLine {
+	e, s := a.entry, a.entry.sim
+	p := s.Pt
+	rho, tK := reentry.Atm(s.H, s.Prof.AtmosScale)
+	V, Rn := s.V, s.Veh.NoseRadius
+	B := s.Veh.CoilField
+	if s.Boosting() {
+		B *= 1.8
+	}
+	const mu0 = 4 * math.Pi * 1e-7
+	pmag := B * B / (2 * mu0)
+	pram := math.Max(rho*V*V, 1e-9)
+	rmp := math.Max(math.Pow(pmag/pram, 1.0/6.0), 1)
+	F := p.GLoad * s.Veh.Mass * 9.80665 // total aero force, N
+	L := func(s string) algLine { return algLine{0, s} }
+	P := func(s string) algLine { return algLine{1, s} }
+	E := func(s string) algLine { return algLine{2, s} }
+	S := func(s string) algLine { return algLine{3, s} }
+	R := func(s string) algLine { return algLine{4, s} }
+	switch tab {
+	case 0: // CONCEPT
+		return []algLine{
+			L("MAGNETOSPHERIC STANDOFF"),
+			P("the coil inflates a plasma pillow, standing off"),
+			P("where magnetic pressure balances the ram"),
+			E("r_{mp}/R_{n} = (p_{mag}/p_{ram})^{1/6}"),
+			S(fmt.Sprintf("= (%.3g Pa / %.3g Pa)^{1/6}", pmag, pram)),
+			R(fmt.Sprintf("= %.2f   →   R_{eff}/R_{n} = %.2f flown", rmp, p.Standoff)),
+			L("THE BRAKE"),
+			P("braking power comes free from the trajectory;"),
+			P("the shield routes it away from the structure"),
+			E("P_{brake} = D·V"),
+			S(fmt.Sprintf("= %.1f MN · %.2f km/s", F/1e6, V/1000)),
+			R(fmt.Sprintf("= %.2f GW shed as heat and light", F*V/1e9)),
+			L("THE CORRIDOR"),
+			P("the wedge: steep burns the hull, shallow skips out;"),
+			P("the band narrows as the entry deepens"),
+			E("γ_{ref}(h) ± w(h)  —  fly the needle"),
+			R(fmt.Sprintf("γ_{ref} = %.2f° ± %.2f°    flown γ = %+.2f°",
+				s.RefG, s.Width, s.Gamma*180/math.Pi)),
+		}
+	case 1: // FLOW
+		h0 := 0.5 * V * V
+		return []algLine{
+			L("THE AIR - US-76"),
+			P("the standard atmosphere, log-interpolated in density"),
+			E(fmt.Sprintf("h = %.1f km", s.H/1000)),
+			R(fmt.Sprintf("ρ = %.3g kg/m^{3}    T_{a} = %.0f K", rho, tK)),
+			L("THE FLOW NUMBERS"),
+			E("M = V/√{γ_{a}RT}    q_{dyn} = ½ρV^{2}    Kn = λ/2R_{n}"),
+			R(fmt.Sprintf("M = %.1f    q_{dyn} = %.2f kPa    Kn = %.2g",
+				p.Mach, p.QDyn/1000, p.Kn)),
+			L("BEHIND THE SHOCK"),
+			P("stagnation enthalpy sets the shock-layer temperature;"),
+			P("the real-gas shock packs the air twelvefold"),
+			E("T_{2} ≈ 1300·√{h_{0}/10^{6}}      ρ_{2} = 12·ρ"),
+			S(fmt.Sprintf("h_{0} = ½V^{2} = %.1f MJ/kg", h0/1e6)),
+			R(fmt.Sprintf("T_{2} = %.0f K    ρ_{2} = %.3g kg/m^{3}", p.T2, 12*rho)),
+		}
+	case 2: // HEATING
+		qc := 1.7415e-4 * math.Sqrt(rho/Rn) * V * V * V
+		qr := math.Max(p.QBare-qc, 0)
+		wallRed := math.Pow(s.Veh.TPSLimit/(0.85*5.670374419e-8), 0.25)
+		return []algLine{
+			L("CONVECTIVE - SUTTON-GRAVES"),
+			P("thin air, hit fast: flux rides the cube of velocity"),
+			E("q_{c} = k·√{ρ/R_{n}}·V^{3}"),
+			S(fmt.Sprintf("k = 1.74·10^{-4}   ρ = %.3g   V = %.2f km/s", rho, V/1000)),
+			R(fmt.Sprintf("q_{c} = %.1f W/cm^{2}", qc/1e4)),
+			L("RADIATIVE - TAUBER-SUTTON"),
+			P("above ~9 km/s the shock layer itself starts to shine"),
+			E("q_{r} = C·R_{n}^{a}·ρ^{1.22}·f(V)"),
+			R(fmt.Sprintf("q_{r} = %.2f W/cm^{2}   →   q_{bare} = %.1f", qr/1e4, p.QBare/1e4)),
+			L("THE WALL, RE-RADIATING"),
+			E("T_{w} = (q_{shld}/ε·σ_{SB})^{1/4}"),
+			S(fmt.Sprintf("= (%.1f W/cm^{2} ÷ 0.85·σ_{SB})^{1/4}", p.QShielded/1e4)),
+			R(fmt.Sprintf("T_{w} = %.0f K    TPS red line %.0f K", p.WallTemp, wallRed)),
+		}
+	case 3: // PLASMA
+		sband := "CLEAR"
+		if p.Fpe > 2.2e9 {
+			sband = "BLACKOUT"
+		}
+		return []algLine{
+			L("SAHA'S CHARGE BALANCE"),
+			P("NO, N/O and the seed bid for ionisation;"),
+			P("fixed-point iteration finds the electron density"),
+			E("Σ n_{i}·S_{i}/(S_{i}+n_{e}) = n_{e},   S = A·T^{3/2}·e^{-χ/kT}"),
+			R(fmt.Sprintf("n_{e} = %.2g m^{-3}    x_{e} = %.2g", p.Ne, p.Xe)),
+			L("THE LITHIUM SEED"),
+			P("lithium ionises at 5.39 eV against air's 13.6;"),
+			P("a trace of it owns the electron budget"),
+			E("f_{Li} = mol_{Li} / (mol_{air} + mol_{Li})"),
+			S(fmt.Sprintf("feed = %.0f g/s", s.FeedUsed*1000)),
+			R(fmt.Sprintf("f_{Li} = %.2g — the cheap electrons", p.FLi)),
+			L("PLASMA FREQUENCY - THE RADIO VERDICT"),
+			E("f_{pe} = 8.98·√{n_{e}}  Hz"),
+			R(fmt.Sprintf("f_{pe} = %.2f GHz   —   S-BAND %s", p.Fpe/1e9, sband)),
+		}
+	case 4: // SHIELD
+		verdict := "ON THE LINE"
+		if p.Gate > 0.9 && s.FeedUsed > e.optFeed+0.02 {
+			verdict = "SEED WASTE - gate saturated"
+		} else if p.QShielded > 0.55*s.Veh.TPSLimit && s.FeedUsed < e.optFeed-0.02 {
+			verdict = "STARVED - the hull is paying"
+		}
+		return []algLine{
+			L("THE INTERACTION PARAMETER"),
+			P("how hard the field grips the conducting flow"),
+			E("Q = σ_{eff}·B^{2}·R_{n} / ρV      gate = φ·Q/(1+Q)"),
+			S(fmt.Sprintf("B = %.2f T   R_{n} = %.0f m", B, Rn)),
+			R(fmt.Sprintf("Q = %.2f    gate = %.2f", p.InteractionQ, p.Gate)),
+			L("THE PAYOFF"),
+			P("a fatter effective nose spreads the same heat thinner"),
+			E("q_{shld} = q_{bare}·√{R_{n}/R_{eff}}"),
+			S(fmt.Sprintf("= %.1f · √{1/%.2f}", p.QBare/1e4, p.Standoff)),
+			R(fmt.Sprintf("q_{shld} = %.1f W/cm^{2}   (−%.0f%%)",
+				p.QShielded/1e4, (1-p.QShielded/math.Max(p.QBare, 1))*100)),
+			L("SEED ECONOMY - THE ADVISOR"),
+			P("the least feed holding 60% of the TPS limit;"),
+			P("past the gate's knee, grams buy nothing"),
+			E("feed_{opt} = min f : q_{shld}(f) ≤ 0.6·q_{TPS}"),
+			R(fmt.Sprintf("opt %.0f g/s — flying %.0f g/s — %s",
+				e.optFeed*1000, s.FeedUsed*1000, verdict)),
+		}
+	default: // POWER
+		pseed := s.FeedUsed * 2.5e6
+		pcryo := 3e-4 * 5.670374419e-8 * math.Pow(p.WallTemp, 4) *
+			(4 * math.Pi * Rn * Rn) * 50
+		parr := math.Max(p.PowerDraw-pcryo-pseed-3.5e4, 0)
+		bus := ""
+		if p.PowerDraw > s.Veh.PowerCap {
+			bus = " — BROWNOUT"
+		}
+		return []algLine{
+			L("THE SHIP-SUPPLIED LEDGER"),
+			P("the shield's bill, subsystem by subsystem"),
+			E("P = P_{array} + P_{cryo} + P_{seed} + P_{hotel}"),
+			S(fmt.Sprintf("= %.2f + %.2f + %.2f + 0.04 MW",
+				parr/1e6, pcryo/1e6, pseed/1e6)),
+			R(fmt.Sprintf("P = %.2f MW  /  bus %.0f MW%s",
+				p.PowerDraw/1e6, s.Veh.PowerCap/1e6, bus)),
+			L("FOR SCALE - BRAKING POWER"),
+			P("a ship that must generate power comparable to"),
+			P("the brake has misunderstood the problem"),
+			E("P_{brake} = D·V"),
+			R(fmt.Sprintf("= %.2f GW    P/P_{brake} = %.2g", F*V/1e9,
+				p.PowerDraw/math.Max(F*V, 1))),
+			L("THE GRID'S SHARE"),
+			P("a starving battery is nearly a bare-body entry"),
+			E("authority = 0.35 + 0.65·served"),
+			R(fmt.Sprintf("served %.0f%%   →   authority ×%.2f",
+				s.Supply*100, 0.35+0.65*math.Min(math.Max(s.Supply, 0), 1))),
+		}
+	}
+}
+
+// drawAlgebraSky writes the live algebra onto the black of the sky
+// itself, just above the horizon — no panel, no box: the equation, its
+// substitution and its result, ghosted into the scene and recomputed
+// every frame, touring block by block through the console's six tabs.
+// It belongs to the black sky: as the air claims the dome (or the ILS
+// seam takes the frame) the numbers dissolve with the stars.
+func (a *App) drawAlgebraSky(screen *ebiten.Image, hy float64) {
+	e, s := a.entry, a.entry.sim
+	if !e.algOpen || s.Status() != reentry.Flying {
+		return
+	}
+	hkm := s.H / 1000
+	dark := math.Min(math.Max((hkm-15)/35, 0), 1) *
+		math.Max(1-e.seamT()*2.5, 0)
+	room := math.Min(math.Max((hy-295)/6, 0), 1) // the horizon needs headroom
+	base := 0.85 * dark * room
+	if base < 0.03 {
+		return
+	}
+	// split the tab into its blocks and pick the touring one
+	var blocks [][]algLine
+	for _, ln := range a.algebraTab(e.algTab) {
+		if ln.kind == 0 {
+			blocks = append(blocks, nil)
+		}
+		if len(blocks) > 0 {
+			blocks[len(blocks)-1] = append(blocks[len(blocks)-1], ln)
+		}
+	}
+	if len(blocks) == 0 {
+		return
+	}
+	blk := blocks[e.algBlock%len(blocks)]
+	// ease each block in and out of the sky
+	fade := math.Min(e.algT*1.6, 1) * math.Min(math.Max((6.5-e.algT)*1.6, 0), 1)
+	al := base * fade
+	alF := float32(al)
+
+	x0, y := 340.0, 235.0
+	subEnd := 0.0
+	for _, ln := range blk {
+		switch ln.kind {
+		case 0: // the block label, with the tab it belongs to
+			fastLine(screen, float32(x0), float32(y+2), float32(x0), float32(y+11),
+				2, colEM, al)
+			ui.DrawText(screen, algTabNames[e.algTab]+"  /  "+ln.s, x0+8, y-1,
+				float32(al*0.75))
+			y += 15
+		case 2: // the equation
+			ui.DrawMath(screen, ln.s, x0+8, y, 13.5, colChrome, alF)
+			y += 20
+		case 3: // the substitution, held to join with the result
+			subEnd = ui.DrawMath(screen, ln.s, x0+8, y, 11.5, colEM, alF)
+		case 4: // the result, on the substitution's line when there is one
+			rx := x0 + 8
+			if subEnd > 0 {
+				rx = subEnd + 20
+			}
+			ui.DrawMath(screen, ln.s, rx, y, 12, colPhos, alF)
+			y += 17
+			subEnd = 0
+		}
 	}
 }

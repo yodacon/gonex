@@ -325,6 +325,7 @@ func (a *App) Update() error {
 		a.toggleMenu()
 	}
 	if a.running() && a.Console.State == console.Hidden &&
+		a.mode != modeEntry && // on the corridor, TAB is the algebra panel
 		inpututil.IsKeyJustPressed(ebiten.KeyTab) {
 		a.toggleWindow(a.fullMapWin)
 	}
