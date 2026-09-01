@@ -213,6 +213,34 @@ type entryState struct {
 
 	// the volumetric layer the descent flies through
 	clouds []cloudBlob
+
+	// the GPIS stage machine: which of the six trajectory stages the
+	// physics says this is, with a short hold so labels cannot flicker
+	stage     entryStage
+	stageHold float64
+	stageT    float64
+
+	// the flight recorder: one sample every couple of sim-seconds, the
+	// console prototype's chart row fed live — heating, authority, power
+	rec   []recSample
+	recCD float64
+}
+
+// recSample is one tick of the console-chart flight recorder.
+type recSample struct {
+	t              float64
+	qBare, qShield float64 // W/m2
+	pAuth, aAuth   float64
+	power          float64 // W
+}
+
+// vscale is the chase camera's zoom: backed off while the entry is
+// hypersonic and the plasma show is wide, easing back in on the hull as
+// the speed falls — the third-person eye keeping the whole envelope in
+// frame. Every effect that hugs the hull spawns in this scale.
+func (e *entryState) vscale() float64 {
+	f := math.Min(math.Max((e.sim.V-3000)/5000, 0), 1)
+	return shipScale - 0.25*f
 }
 
 // The plasma ramp: the sheath read as layers, front to wake — blue at the
@@ -483,6 +511,18 @@ func (a *App) updateEntry() {
 		s.Step(dt*entryTimeScale, c)
 		a.voy.Lithium = s.Li
 		a.voy.RCSFuel = s.RCS
+		a.updateStage()
+
+		// the flight recorder ticks on the sim clock
+		if e.recCD -= dt * entryTimeScale; e.recCD <= 0 {
+			e.recCD = 2
+			e.rec = append(e.rec, recSample{t: s.T,
+				qBare: s.Pt.QBare, qShield: s.Pt.QShielded,
+				pAuth: s.PlasmaAuth, aAuth: s.AeroAuth, power: s.Pt.PowerDraw})
+			if len(e.rec) > 420 {
+				e.rec = e.rec[1:]
+			}
+		}
 
 		// the pipe's teaching aids: smoothed hull-loss rate for the
 		// BURNING warnings, and the future-position ladder
@@ -918,8 +958,8 @@ func (a *App) updatePlasma(c reentry.Controls) {
 			sinb, cosb := math.Sin(e.bank*0.7), math.Cos(e.bank*0.7)
 			for i, n := 0, 1+int(s.OffCorridor*7); i < n; i++ {
 				ed := e.edges[rng.Intn(len(e.edges))]
-				ex := (ed.dx*cosb - ed.dy*sinb) * shipScale
-				ey := (ed.dx*sinb + ed.dy*cosb) * shipScale
+				ex := (ed.dx*cosb - ed.dy*sinb) * e.vscale()
+				ey := (ed.dx*sinb + ed.dy*cosb) * e.vscale()
 				e.parts = append(e.parts, plasmaParticle{
 					x: shipX + ex, y: cy + ey,
 					vx: ed.nx*90 + (rng.Float64()-0.5)*40, vy: 260 + rng.Float64()*160,
@@ -936,8 +976,8 @@ func (a *App) updatePlasma(c reentry.Controls) {
 				if ed.ny > 0 && rng.Float64() < 0.6 {
 					continue // the bow burns hardest
 				}
-				ex := (ed.dx*cosb - ed.dy*sinb) * shipScale
-				ey := (ed.dx*sinb + ed.dy*cosb) * shipScale
+				ex := (ed.dx*cosb - ed.dy*sinb) * e.vscale()
+				ey := (ed.dx*sinb + ed.dy*cosb) * e.vscale()
 				enx := ed.nx*cosb - ed.ny*sinb
 				eny := ed.nx*sinb + ed.ny*cosb
 				e.parts = append(e.parts, plasmaParticle{
@@ -1110,8 +1150,8 @@ func (a *App) updatePlasma(c reentry.Controls) {
 	if s.AeroAuth > 0.2 && s.V > 350 && len(e.contrail) < 320 {
 		sinb, cosb := math.Sin(e.bank*0.7), math.Cos(e.bank*0.7)
 		for _, side := range [2]float64{-1, 1} {
-			ax := (side*44*cosb - 18*sinb) * shipScale
-			ay := (side*44*sinb + 18*cosb) * shipScale
+			ax := (side*44*cosb - 18*sinb) * e.vscale()
+			ay := (side*44*sinb + 18*cosb) * e.vscale()
 			e.contrail = append(e.contrail, smokeBlob{
 				x: shipX + ax, y: float64(shipDrawY) + ay,
 				vx:   side*16 + (rng.Float64()-0.5)*8,
@@ -1548,7 +1588,7 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 	// angle — the hull visibly ALIGNED with the reentry slope, nosing
 	// down the corridor and leveling out for the flare
 	seamY := float64(shipDrawY) + (560-float64(shipDrawY))*tF
-	seamScale := shipScale + (1.5-shipScale)*tF
+	seamScale := e.vscale() + (1.5-e.vscale())*tF
 	pitch := math.Min(math.Max(-s.Gamma/(math.Pi/2), 0), 1)
 	slopeSquash := 1 - 0.32*pitch*(1-tF)
 	place := func(img *ebiten.Image, extraScale float64) *ebiten.DrawImageOptions {
@@ -1604,8 +1644,8 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 	if len(e.puffs) > 0 {
 		sinb, cosb := math.Sin(e.bank*0.7), math.Cos(e.bank*0.7)
 		for _, pf := range e.puffs {
-			cxp := shipX + (pf.dx*cosb-pf.dy*sinb)*shipScale
-			cyp := float64(shipDrawY) + (pf.dx*sinb+pf.dy*cosb)*shipScale
+			cxp := shipX + (pf.dx*cosb-pf.dy*sinb)*e.vscale()
+			cyp := float64(shipDrawY) + (pf.dx*sinb+pf.dy*cosb)*e.vscale()
 			al := (1 - pf.life/pf.span) * 0.55
 			prevSet := false
 			var plx, ply float32
@@ -1635,12 +1675,19 @@ func (a *App) drawEntry(screen *ebiten.Image) {
 		s.Pt.Mach, s.AeroAuth)
 
 	a.drawBoom(screen)
+	a.drawShipVectors(screen)
 	a.drawEntryGauges(screen)
 	a.drawEntryStrip(screen)
 	a.drawEntryDials(screen)
 	a.drawOrbitInset(screen)
 	a.drawCorridorInset(screen)
+	a.drawStageBands(screen)
+	a.drawSurfaceMFD(screen)
+	a.drawAeroMFD(screen)
+	a.drawConsoleCharts(screen)
 	a.drawILSSide(screen)
+	a.drawStageBanner(screen)
+	a.drawLiveAlgebra(screen)
 	a.drawEntryHud(screen, hy) // the landing HUD flies the whole sequence
 	a.drawTrajProjection(screen, hy)
 	a.drawSteerDirector(screen, hy)
@@ -2100,8 +2147,10 @@ func dial(dst *ebiten.Image, cx, cy, r, v, min, max, red0, red1 float64, label, 
 // drawEntryStrip is the console's top telemetry row: the scrubbed-instant
 // numbers, label over value, straight out of reentry-console.html.
 func (a *App) drawEntryStrip(screen *ebiten.Image) {
-	s := a.entry.sim
+	e := a.entry
+	s := e.sim
 	cells := []struct{ k, v string }{
+		{"STAGE", stageTable[e.stage].short},
 		{"T", fmt.Sprintf("%.0f s", s.T)},
 		{"ALTITUDE", fmt.Sprintf("%.1f km", s.H/1000)},
 		{"VELOCITY", fmt.Sprintf("%.2f km/s", s.V/1000)},
@@ -2284,12 +2333,24 @@ func (a *App) drawEntryDials(screen *ebiten.Image) {
 		{"BATTERY", fmt.Sprintf("%.0f%%", battPct), battPct, 0, 100, 0, 15},
 		{"LI TANK", fmt.Sprintf("%.0f%%", liPct), liPct, 0, 100, 0, 10},
 	}
+	// the stage brings its own dials forward: the instruments that matter
+	// right now carry a ring in the stage's band color
+	prio := map[string]bool{}
+	for _, p := range stageTable[e.stage].priority {
+		prio[p] = true
+	}
+	stCol := stageTable[e.stage].col
 	cw := (float64(ScreenW) - 252) / float64(len(defs))
 	for i, d := range defs {
-		dial(screen, 244+cw*float64(i)+cw/2, top+38, math.Min(cw*0.36, 28),
-			d.v, d.min, d.max, d.r0, d.r1, d.label, d.val)
+		dcx, dcy := 244+cw*float64(i)+cw/2, top+38
+		r := math.Min(cw*0.36, 28)
+		dial(screen, dcx, dcy, r, d.v, d.min, d.max, d.r0, d.r1, d.label, d.val)
+		if prio[d.label] {
+			pulse := 0.55 + 0.35*math.Abs(math.Sin(s.T*3))
+			vector.StrokeCircle(screen, float32(dcx), float32(dcy), float32(r+6),
+				1.4, premul(stCol, pulse), false)
+		}
 	}
-	_ = e
 }
 
 func hbar(dst *ebiten.Image, x, y, w, frac float64, c color.RGBA, label string) {
@@ -2319,6 +2380,11 @@ func (a *App) drawEntryGauges(screen *ebiten.Image) {
 	}
 	ui.DrawText(screen, fmt.Sprintf("STEER %-6s plasma %3.0f%% · aero %3.0f%%",
 		steer, s.PlasmaAuth*100, s.AeroAuth*100), x, py+114, 1)
+
+	// the stage line: what the trajectory is doing, and what the stick is for
+	st := stageTable[e.stage]
+	ui.DrawTextScaled(screen, "STAGE  "+st.name, x, py+138, 1, st.col, 1)
+	ui.DrawText(screen, st.hint, x, py+156, 0.7)
 
 	// center: the corridor needle — γ error against the narrowing band
 	nx, nw := 260.0, 320.0

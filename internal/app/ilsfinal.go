@@ -106,6 +106,8 @@ type hudParams struct {
 	gsDev, locDev float64 // -1..1, autoland holds them near zero
 	fmx, fmy      float64 // flight-path marker aim point
 	phase         string
+	aoa           float64 // trim angle of attack, deg — live, not painted on
+	mode          string  // MAN / AUTO
 	showLock      bool
 }
 
@@ -133,7 +135,8 @@ func (a *App) drawILSHud(screen *ebiten.Image, hy float64) {
 		rot: func(x, y float64) (float32, float32) { return float32(x), float32(y) },
 		spd: e.finalSpd * 1000, alt: e.finalH * 1000, rng: math.Max(-e.finalRun, 0),
 		gsDev: wob, locDev: wob * 0.7,
-		fmx: fmx, fmy: fmy, phase: phase, showLock: true,
+		fmx: fmx, fmy: fmy, phase: phase, aoa: 3.0 + wob*8, mode: "AUTO",
+		showLock: true,
 	})
 }
 
@@ -163,6 +166,8 @@ func (a *App) drawEntryHud(screen *ebiten.Image, hy float64) {
 		fmx:    shipX - math.Min(math.Max(s.Crossrange/40, -1), 1)*90,
 		fmy:    hy + pitch*(float64(shipDrawY)-70-hy),
 		phase:  "REENTRY — " + map[bool]string{true: "AUTOLAND", false: "MANUAL"}[e.auto],
+		aoa:    aoaDeg(s),
+		mode:   map[bool]string{true: "AUTO", false: "MAN"}[e.auto],
 	})
 }
 
@@ -235,7 +240,7 @@ func (a *App) drawHudFrame(screen *ebiten.Image, p hudParams) {
 		x     float32
 		val   float64
 		label string
-	}{{150, spd, "GS m/s"}, {float32(ScreenW) - 224, alt, "ALT m"}} {
+	}{{244, spd, "GS m/s"}, {float32(ScreenW) - 290, alt, "ALT m"}} {
 		fastRect(screen, side.x, fhy-boxH/2, boxW, boxH, color.RGBA{4, 10, 5, 255}, 0.7)
 		hudLine(screen, side.x, fhy-boxH/2, side.x+boxW, fhy-boxH/2, 1, 0.9)
 		hudLine(screen, side.x, fhy+boxH/2, side.x+boxW, fhy+boxH/2, 1, 0.9)
@@ -292,6 +297,6 @@ func (a *App) drawHudFrame(screen *ebiten.Image, p hudParams) {
 	// --- the mode line and callouts
 	ui.DrawTextScaled(screen, p.phase, float64(cx)-float64(len(p.phase))*3.5, 116, 1, hudGreen, 0.95)
 	ui.DrawTextScaled(screen,
-		fmt.Sprintf("RNG %5.1f km   AoA 5.1   AUTO", p.rng),
+		fmt.Sprintf("RNG %5.1f km   AoA %+5.1f   %s", p.rng, p.aoa, p.mode),
 		float64(cx)-100, 136, 1, hudGreen, 0.7)
 }

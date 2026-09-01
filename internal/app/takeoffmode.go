@@ -9,6 +9,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/vector"
 
 	"yodacon.org/gonex/internal/city"
+	"yodacon.org/gonex/internal/reentry"
 	"yodacon.org/gonex/internal/ui"
 )
 
@@ -41,6 +42,13 @@ type takeoffState struct {
 	prom      *promLayer // the ascent sheath: the prominence fan off the nose
 	promOut   *promLayer // the outer wave of lobes, twice as far off the nose
 	ions      *ionFlow
+
+	// the ascent's own live physics, run every frame off the standard
+	// atmosphere the entry flies — the same air, climbed instead of fallen
+	atmScale     float64
+	mach, qdyn   float64 // qdyn in Pa
+	accG, vs     float64 // smoothed axial g and climb rate m/s
+	prevV, prevH float64
 }
 
 // ascentHeat is the climb's sheath envelope: nothing in the thick air,
@@ -52,12 +60,15 @@ func (ts *takeoffState) ascentHeat() float64 {
 }
 
 func (a *App) startTakeoff(stellarID int) {
-	ts := &takeoffState{stellar: stellarID, h: 0.028,
+	ts := &takeoffState{stellar: stellarID, h: 0.028, atmScale: 1,
 		port:      city.Generate(int64(stellarID) * 7919),
 		dayPhase0: math.Mod(float64(a.voy.Day)*0.37+float64(stellarID%7)*0.11+0.05, 1),
 		prom:      newPromLayer(a.voy.Rng.Int63(), 52),
 		promOut:   newOuterPromLayer(a.voy.Rng.Int63(), 64),
 		ions:      newIonFlow(a.voy.Rng.Int63(), 700)}
+	if st := a.gal.Stellars[stellarID]; st != nil {
+		ts.atmScale = st.Landing.AtmosScale
+	}
 	nebCols := []color.RGBA{{150, 96, 205, 255}, {84, 178, 190, 255},
 		{190, 110, 170, 255}, {96, 120, 210, 255}}
 	for i := 0; i < 8; i++ {
@@ -92,6 +103,18 @@ func (a *App) updateTakeoff() {
 		ts.v = math.Min(0.35+ct*1.1, 8.35)
 		ts.roll += ts.v * dt * 0.25 // ground track falls behind
 	}
+	// the background physics: the same standard atmosphere the entry
+	// falls through, evaluated at the climb's altitude every frame — the
+	// gauges read computed air, not animation curves
+	rho, tK := reentry.Atm(ts.h*1000, ts.atmScale)
+	ts.mach = ts.v * 1000 / math.Sqrt(1.4*287.05*tK)
+	ts.qdyn = 0.5 * rho * ts.v * ts.v * 1e6
+	acc := (ts.v - ts.prevV) * 1000 / dt / 9.80665
+	ts.accG += (acc - ts.accG) * math.Min(6*dt, 1)
+	vsn := (ts.h - ts.prevH) * 1000 / dt
+	ts.vs += (vsn - ts.vs) * math.Min(6*dt, 1)
+	ts.prevV, ts.prevH = ts.v, ts.h
+
 	ts.prom.step(dt, ts.ascentHeat())
 	ts.promOut.step(dt, ts.ascentHeat())
 	// the climb's ion flow falls from the darkening sky up the departure
@@ -202,4 +225,6 @@ func (a *App) drawTakeoff(screen *ebiten.Image) {
 	ui.DrawText(screen,
 		fmt.Sprintf("ALT %6.1f km   VEL %5.2f km/s", hkm, ts.v),
 		float64(ScreenW)/2-160, 132, 0.7)
+
+	a.drawTakeoffGauges(screen)
 }

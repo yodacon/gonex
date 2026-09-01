@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"image/color"
 	"math"
 
@@ -117,10 +118,89 @@ func (a *App) drawDeorbit(screen *ebiten.Image) {
 	st := a.gal.Stellars[d.stellar]
 	ui.DrawText(screen, "TARGET: "+st.Name, cx-160, 112, 0.7)
 
+	a.drawDeorbitMFD(screen, d, prog)
+
 	// the white-in: first plasma washes the cut away
 	if prog > 0.72 {
 		w := ease((prog - 0.72) / 0.28)
 		vector.DrawFilledRect(screen, 0, 0, ScreenW, ScreenH,
 			premul(color.RGBA{255, 236, 220, 255}, w), false)
 	}
+}
+
+// drawDeorbitMFD is the orbit computer riding the burn: the parking
+// circle deforming as the retro engines drag the periapsis down into the
+// atmosphere, the osculating elements ticking live beside it, and the
+// one number the whole maneuver is about — PeA, driven to −20 km and
+// ringed when it gets there. The deorbit stage's own gauge.
+func (a *App) drawDeorbitMFD(screen *ebiten.Image, d *deorbitState, prog float64) {
+	x0, y0, w, h := 28.0, 168.0, 204.0, 216.0
+	vector.DrawFilledRect(screen, float32(x0), float32(y0), float32(w), float32(h),
+		premul(color.RGBA{4, 10, 5, 255}, 0.72), false)
+	vector.StrokeRect(screen, float32(x0), float32(y0), float32(w), float32(h), 1,
+		premul(hudGreen, 0.6), false)
+	st := a.gal.Stellars[d.stellar]
+	title := "Orbit"
+	if st != nil {
+		title = "Orbit: " + st.Name
+	}
+	ui.DrawTextScaled(screen, title, x0+8, y0+4, 1, hudGreen, 0.9)
+	ui.DrawTextScaled(screen, "Prj SHP", x0+w-56, y0+4, 1, hudGreen, 0.5)
+
+	// the burn: f runs 0 → 1 over the retro-fire, then holds
+	f := ease(math.Min(prog/0.42, 1))
+	peA := 362.0 - 382.0*f // thousand metres: +362.0k → −20.0k
+
+	// the orbit plot: the circle pinched toward the planet at periapsis
+	ocx, ocy, or0 := x0+w/2+22, y0+112.0, 52.0
+	vector.StrokeCircle(screen, float32(ocx), float32(ocy), float32(or0*0.46), 1,
+		premul(colDim, 0.9), false)
+	var lx, ly float32
+	prev := false
+	for i := 0; i <= 48; i++ {
+		th := 2 * math.Pi * float64(i) / 48
+		rr := or0 * (1 - 0.30*f*(1+math.Cos(th-math.Pi/2))/2)
+		px := float32(ocx + math.Cos(th)*rr)
+		py := float32(ocy + math.Sin(th)*rr)
+		if prev {
+			fastLine(screen, lx, ly, px, py, 1.2, hudGreen, 0.85)
+		}
+		lx, ly, prev = px, py, true
+	}
+	// the ship on the orbit, opposite the periapsis
+	vector.DrawFilledCircle(screen, float32(ocx), float32(ocy-or0), 2.5,
+		colChrome, false)
+
+	// the osculating elements, live
+	rows := []struct{ k, v string }{
+		{"SMa", fmt.Sprintf("6.%03dM", 728-int(190*f))},
+		{"PeA", fmt.Sprintf("%+6.1fk", peA)},
+		{"ApA", " 400.1k"},
+		{"Vel", fmt.Sprintf("%6.3fk", 7.694-0.212*f)},
+		{"Ecc", fmt.Sprintf("%6.4f", 0.0008+0.0292*f)},
+		{"Inc", " 74.52°"},
+	}
+	for i, row := range rows {
+		ry := y0 + 24 + float64(i)*15
+		c, al := hudGreen, float32(0.85)
+		if row.k == "PeA" {
+			al = 1
+			if peA <= -19 {
+				c = color.RGBA{255, 120, 120, 255}
+				// the red ring around the number that says "burn done"
+				vector.StrokeRect(screen, float32(x0+6), float32(ry-2), 92, 14, 1,
+					premul(c, 0.9), false)
+			}
+		}
+		ui.DrawTextScaled(screen, row.k, x0+8, ry, 1, c, float32(0.55))
+		ui.DrawTextScaled(screen, row.v, x0+38, ry, 1, c, al)
+	}
+	// the PRJ/DST rail, and the target line the maneuver is flown to
+	for i, b := range [3]string{"PRJ", "DST", "HUD"} {
+		by := y0 + 26 + float64(i)*24
+		vector.StrokeRect(screen, float32(x0+w-32), float32(by), 26, 13, 1,
+			premul(hudGreen, 0.35), false)
+		ui.DrawTextScaled(screen, b, x0+w-29, by+1, 1, hudGreen, 0.45)
+	}
+	ui.DrawTextScaled(screen, "PeA target -20.0k", x0+8, y0+h-16, 1, hudGreen, 0.6)
 }
