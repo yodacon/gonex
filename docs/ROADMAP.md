@@ -1,6 +1,6 @@
 # The Road to Feature-Complete Flight
 
-*Written against v0.1.0-rc2. The landing sequence is done and pretty; this
+*Written against v0.1a2. The landing sequence is done and pretty; this
 is everything around it. The theme of the whole document is UNIFICATION:
 gonex is still two stitched games — konex's 1997 deathmatch and the
 reentry-trader — and the seams show exactly where a feature stops being
