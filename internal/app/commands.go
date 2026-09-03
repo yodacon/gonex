@@ -101,17 +101,18 @@ func (a *App) registerCommands() {
 			if !ok || s.Kind != world.KindNPC {
 				continue
 			}
-			orders := "-"
-			if s.Controller != nil {
+			orders, flight := "-", ""
+			if d, ok := s.Controller.(*ai.Doctrine); ok {
+				orders, flight = d.Name()+" "+d.Status(), d.Flight()
+			} else if s.Controller != nil {
 				orders = s.Controller.Name()
 			}
-			where := "flying"
 			if s.Docked() {
-				where = fmt.Sprintf("pad %.1fs", s.PadCD)
+				flight = fmt.Sprintf("pad %.0f%%", s.LandFrac()*100)
 			}
-			c.Printf("%-10s %-5s %-9s %-10s rnd %4d/%-4d hull %3d  batt %3.0f%%  %s",
+			c.Printf("%-10s %-5s %-8s %-18s rnd %4d/%-4d hull %3d  %s",
 				s.Name, s.Team, s.Role, orders, s.Rounds, s.RoundsMax,
-				s.Health, s.Grid.BattFrac()*100, where)
+				s.Health, flight)
 		}
 	}, "fleet", "roster")
 

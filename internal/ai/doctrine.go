@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"strings"
 
+	"yodacon.org/gonex/internal/gmath"
 	"yodacon.org/gonex/internal/world"
 )
 
@@ -98,12 +99,16 @@ type Doctrine struct {
 	Bingo     float64 // magazine fraction that turns it for home
 	HullBingo int     // hull points that turn it for home
 
-	home  *world.Planet
-	st    state
-	rtbT  float64 // seconds spent trying to get home this sortie
-	said  state
-	saidT float64 // cooldown on the order tape, so a busy pilot cannot flood it
-	relit float64 // re-home cooldown: don't rescan for a base every frame
+	self   *world.Ship // the pilot this doctrine flies; set on first tick
+	home   *world.Planet
+	fleet  *Fleet
+	st     state
+	rtbT   float64 // seconds spent trying to get home this sortie
+	said   state
+	saidT  float64 // cooldown on the order tape, so a busy pilot cannot flood it
+	relit  float64 // re-home cooldown: don't rescan for a base every frame
+	deaths int     // last seen Ship.Deaths — a change means this is a new hull
+	joinCD float64 // throttle on looking for a flight to join
 }
 
 // Name identifies the behavior for saves and the console.
@@ -121,6 +126,25 @@ func (d *Doctrine) Held() float64 {
 		return 0
 	}
 	return d.rtbT
+}
+
+// Flight names the flight this pilot is in and what it is doing, with a "*"
+// on the pilot that has command. Empty for a pilot on its own.
+func (d *Doctrine) Flight() string {
+	if d.fleet == nil {
+		return ""
+	}
+	lead := ""
+	if d.Leads() {
+		lead = "*"
+	}
+	return fmt.Sprintf("%s%s/%s(%d)", lead, d.fleet.Name(),
+		d.fleet.PhaseName(), d.fleet.Size())
+}
+
+// Leads reports whether this pilot has the flight.
+func (d *Doctrine) Leads() bool {
+	return d.fleet != nil && d.self != nil && d.fleet.Commander() == d.self
 }
 
 // Status is the order the pilot is flying right now — PATROL, ENGAGE or RTB.
@@ -187,11 +211,23 @@ func Random(r *rand.Rand) world.Controller {
 // --- flying it -----------------------------------------------------------
 
 func (d *Doctrine) Control(s *world.Ship, w *world.World, dt float64) {
+	d.self = s
 	if s.Docked() {
+		// In a turnaround: off the board, and out of the flight. Whatever it
+		// was flying with carries on without it, and it musters again on the
+		// way out. This is also what passes command along.
+		d.quitFleet(w, s)
 		return
+	}
+	// A new hull is a new pilot as far as the flight is concerned.
+	if s.Deaths != d.deaths {
+		d.deaths = s.Deaths
+		d.quitFleet(w, s)
+		d.st, d.said = stFly, stFly
 	}
 	d.relit -= dt
 	d.saidT -= dt
+	d.joinCD -= dt
 	if d.home == nil || d.home.Team != s.Team || d.relit <= 0 {
 		// A guard's station is simply the nearest friendly world; a pilot
 		// heading home wants one with a free berth and something to sell.
@@ -222,10 +258,121 @@ func (d *Doctrine) Control(s *world.Ship, w *world.World, dt float64) {
 	}
 
 	if d.st == stReturn {
+		d.quitFleet(w, s) // a pilot going home is no longer in the fight
 		d.flyHome(s, w, dt)
 		return
 	}
-	d.fight(s, w, dt)
+
+	// Everything else flies with a flight. Muster into one if we have none.
+	d.ensureFleet(w, s)
+	if d.fleet == nil {
+		d.fight(s, w, dt, d.pick(s, w)) // no port, no flight: fight alone
+		return
+	}
+	if d.fleet.Commander() == s {
+		d.fleet.think(w, dt) // exactly one pilot per flight does this
+	}
+	d.flyWithFleet(s, w, dt)
+}
+
+// ensureFleet musters the pilot into the flight forming at its home port, or
+// raises one. Throttled: looking for company is not a per-frame decision.
+func (d *Doctrine) ensureFleet(w *world.World, s *world.Ship) {
+	if d.fleet != nil || d.home == nil || d.joinCD > 0 {
+		return
+	}
+	d.joinCD = 1.5
+	// The muster is at the colour's capital, not at whatever port is nearest.
+	muster := w.Capital(s.Team)
+	if muster == nil {
+		muster = d.home
+	}
+	f := rallyAt(muster, s.Team, d.Quarry, d.Stance == Guard)
+	if f != nil && f.join(s) {
+		d.fleet = f
+	}
+}
+
+func (d *Doctrine) quitFleet(w *world.World, s *world.Ship) {
+	if d.fleet == nil {
+		return
+	}
+	d.fleet.leave(w, s)
+	d.fleet = nil
+}
+
+// flyWithFleet executes the flight's orders. The pilot does not choose a
+// target here — the commander already did, and this is the relay.
+func (d *Doctrine) flyWithFleet(s *world.Ship, w *world.World, dt float64) {
+	f := d.fleet
+	switch f.phase {
+	case Withdrawing:
+		d.setState(s, w, stReturn)
+		d.quitFleet(w, s)
+		d.flyHome(s, w, dt)
+
+	case Mustering:
+		// Hold over the port and take anything that comes at it. This is the
+		// defensive half of the rotation, and it is where every sortie starts.
+		if f.Target != nil && f.Target.Pos().Sub(s.Pos()).Len() < d.Aggro*1.5 {
+			d.fight(s, w, dt, f.Target)
+			return
+		}
+		d.setState(s, w, stFly)
+		d.holdStation(s, w, dt, f.Home.Pos(), musterRadius)
+
+	case Advancing:
+		// Formation flying, with the called target taken if it comes to us.
+		if f.Target != nil && f.Target.Pos().Sub(s.Pos()).Len() < d.Aggro {
+			d.fight(s, w, dt, f.Target)
+			return
+		}
+		if slot, ok := f.slotFor(s); ok {
+			d.setState(s, w, stFly)
+			d.holdStation(s, w, dt, slot, formSlack)
+			return
+		}
+		// The commander flies the flight toward the objective.
+		d.setState(s, w, stFly)
+		if f.Objective != nil {
+			d.runTo(s, w, dt, f.Objective.Pos(), strikeRange*0.6)
+			return
+		}
+		s.Slow(dt)
+
+	case Striking:
+		if f.Target != nil {
+			d.fight(s, w, dt, f.Target)
+			return
+		}
+		d.fight(s, w, dt, d.pick(s, w))
+	}
+}
+
+// holdStation flies to a point and settles on it rather than orbiting it.
+func (d *Doctrine) holdStation(s *world.Ship, w *world.World, dt float64,
+	at gmath.Vec2, slack float64) {
+	to := at.Sub(s.Pos())
+	dist := to.Len()
+	if dist < slack {
+		s.Slow(dt * 1.5)
+		return
+	}
+	s.FaceToward(w, at, dt)
+	if dist > slack*2.5 || s.Vel().Len() < 220 {
+		s.Thrust(w, dt)
+	}
+}
+
+// runTo is the transit: point at something far away and go.
+func (d *Doctrine) runTo(s *world.Ship, w *world.World, dt float64,
+	at gmath.Vec2, stop float64) {
+	if at.Sub(s.Pos()).Len() < stop {
+		s.Slow(dt)
+		return
+	}
+	s.FaceToward(w, at, dt)
+	s.Thrust(w, dt)
 }
 
 // bingo is the turn-for-home check — magazine, hull, or a flat battery.
@@ -260,7 +407,7 @@ func (d *Doctrine) armed(s *world.Ship) bool {
 // pacifist, it is just out of options.
 func (d *Doctrine) flyHome(s *world.Ship, w *world.World, dt float64) {
 	if d.home == nil {
-		d.fight(s, w, dt) // nowhere to go: fight where you stand
+		d.fight(s, w, dt, d.pick(s, w)) // nowhere to go: fight where you stand
 		return
 	}
 	dist := d.home.Pos().Sub(s.Pos()).Len()
@@ -286,9 +433,9 @@ func (d *Doctrine) flyHome(s *world.Ship, w *world.World, dt float64) {
 	}
 }
 
-// fight picks a target under the doctrine's orders and works it.
-func (d *Doctrine) fight(s *world.Ship, w *world.World, dt float64) {
-	target := d.pick(s, w)
+// fight works a target that has already been chosen — by the flight's
+// commander, or by the pilot itself when it is alone.
+func (d *Doctrine) fight(s *world.Ship, w *world.World, dt float64, target *world.Ship) {
 	s.Target = target
 
 	// Leashed and nothing to fight: go back and sit over the home planet.

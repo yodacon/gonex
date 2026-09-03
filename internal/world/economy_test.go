@@ -1,8 +1,25 @@
 package world
 
-import "testing"
+import (
+	"testing"
+
+	"yodacon.org/gonex/internal/gmath"
+)
 
 // testWorld comes from world_test.go.
+
+// land flies the whole approach: a turnaround is a descent, the yard's work
+// and a climb, and the transaction happens at the bottom of the descent.
+// Returns false if the ship could not get a berth at all.
+func land(w *World, s *Ship, p *Planet) bool {
+	if !w.Land(s, p) {
+		return false
+	}
+	for i := 0; i < 600 && s.padSt == padDescend; i++ {
+		s.Update(w, 1.0/60)
+	}
+	return true
+}
 
 func TestOutfitScalesWithCrewAndHull(t *testing.T) {
 	w := testWorld(t)
@@ -78,7 +95,7 @@ func TestTurnaroundRearmsAndCostsThePlanet(t *testing.T) {
 	s.Rounds, s.Health, s.Junk = 0, 40, 8
 
 	ip0, cr0 := p.IP, p.Credits
-	if !w.Land(s, p) {
+	if !land(w, s, p) {
 		t.Fatal("could not land on a friendly planet")
 	}
 	if s.Rounds != s.RoundsMax {
@@ -123,7 +140,7 @@ func TestStarvedPlanetGivesPowerButNotBullets(t *testing.T) {
 	s.Rounds, s.Health = 0, 30
 	s.Grid.BattMJ = 0
 
-	w.Land(s, p)
+	land(w, s, p)
 	if s.Grid.BattFrac() < 0.99 {
 		t.Errorf("power was refused: batt %.2f", s.Grid.BattFrac())
 	}
@@ -150,7 +167,7 @@ func TestBrokePlanetStillGivesPower(t *testing.T) {
 
 	s := w.NewShip(1, TeamRed, "Red 1", KindNPC)
 	s.Rounds, s.Grid.BattMJ = 0, 0
-	w.Land(s, p)
+	land(w, s, p)
 
 	if s.Grid.BattFrac() < 0.99 {
 		t.Errorf("a broke planet refused power: batt %.2f", s.Grid.BattFrac())
@@ -179,8 +196,11 @@ func TestBerthsAreFinite(t *testing.T) {
 	if !w.Land(a, p) {
 		t.Fatal("first ship could not land")
 	}
+	// The berth is taken from the start of the approach, not from touchdown:
+	// the yard must not sell the same pad twice because one ship is still
+	// on the way down.
 	if w.Land(b, p) {
-		t.Error("second ship took an occupied berth")
+		t.Error("second ship took a berth already on approach")
 	}
 }
 
@@ -240,7 +260,7 @@ func TestDockedShipsAreNotTargets(t *testing.T) {
 	w.Add(p)
 	victim := w.NewShip(1, TeamRed, "red", KindNPC)
 	victim.Rounds = 0
-	w.Land(victim, p)
+	land(w, victim, p)
 
 	shooter := w.NewShip(1, TeamGreen, "green", KindNPC)
 	shooter.P = victim.P
@@ -253,5 +273,75 @@ func TestDockedShipsAreNotTargets(t *testing.T) {
 	}
 	if victim.Health != 100 {
 		t.Error("a docked ship took damage")
+	}
+}
+
+// The turnaround is three phases and it is drawn: the ship flies down into
+// the port shrinking away, the yard works while it is out of sight, and it
+// grows back out. None of it may leave the ship shootable or stranded.
+func TestTurnaroundIsFlown(t *testing.T) {
+	w := testWorld(t)
+	p := &Planet{Team: TeamRed, Name: "ConEx"}
+	p.Setup(4000000)
+	w.Add(p)
+
+	s := w.NewShip(1, TeamRed, "Red 1", KindNPC)
+	s.P = p.P.Add(gmath.V(40, 0))
+	s.Rounds, s.Health = 0, 50
+	if !w.Land(s, p) {
+		t.Fatal("could not start an approach")
+	}
+	if s.LandFrac() != 0 {
+		t.Errorf("the approach starts already sunk: %.2f", s.LandFrac())
+	}
+
+	var maxFrac, lastFrac float64
+	rearmedAt := -1.0
+	grew := false
+	const dt = 1.0 / 60
+	for i := 0; i < 60*30 && s.Docked(); i++ {
+		s.Update(w, dt)
+		f := s.LandFrac()
+		if f > maxFrac {
+			maxFrac = f
+		}
+		if f < lastFrac-1e-9 {
+			grew = true // coming back out
+		}
+		if rearmedAt < 0 && s.Rounds > 0 {
+			rearmedAt = f
+		}
+		lastFrac = f
+		if f < 0 || f > 1 {
+			t.Fatalf("land fraction left 0..1: %.3f", f)
+		}
+		if !s.Docked() {
+			break
+		}
+	}
+
+	if s.Docked() {
+		t.Fatal("the ship never came back off the pad")
+	}
+	if maxFrac < 0.999 {
+		t.Errorf("the ship never reached the pad: peak %.3f", maxFrac)
+	}
+	if !grew {
+		t.Error("the ship never grew back out of the port")
+	}
+	if rearmedAt < 0.999 {
+		t.Errorf("the yard worked at %.3f — it must happen at touchdown", rearmedAt)
+	}
+	if s.Rounds != s.RoundsMax || s.Health != 100 {
+		t.Errorf("came off the pad at %d/%d rounds, %d hull", s.Rounds, s.RoundsMax, s.Health)
+	}
+	if s.LandFrac() != 0 {
+		t.Errorf("still part-sunk after launch: %.2f", s.LandFrac())
+	}
+	if len(p.Pad) != 0 {
+		t.Error("berth not released")
+	}
+	if s.V.Len() == 0 {
+		t.Error("launched with no way on")
 	}
 }

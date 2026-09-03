@@ -63,14 +63,13 @@ func (w *World) Land(s *Ship, p *Planet) bool {
 	if p == nil || s.Docked() || p.Team != s.Team || len(p.Pad) >= p.Berths() {
 		return false
 	}
-	svc := p.serve(s)
-	s.Pad, s.PadCD = p, svc.secs()
+	// The berth is taken from the moment the approach starts — the yard does
+	// not sell the same pad to two ships because one of them is still coming
+	// down. The transaction happens at touchdown, in Ship.touchdown.
+	s.Pad, s.padSt, s.padT = p, padDescend, 0
+	s.padAnchor = s.P
 	s.V = gmath.Vec2{}
 	p.Pad = append(p.Pad, s)
-
-	if s.Kind == KindNPC {
-		w.Notify("%s LAND %s — %s", s.Name, p.Label(), svc.line())
-	}
 	return true
 }
 
@@ -82,11 +81,9 @@ func (p *Planet) Launch(w *World, s *Ship) {
 			break
 		}
 	}
-	s.Pad, s.PadCD = nil, 0
-	// Push clear of the pad so the ship is not landing again next frame.
-	s.Heading = float64(w.Rand.Intn(360))
+	s.Pad, s.PadCD, s.padSt, s.padT = nil, 0, padOff, 0
+	// The climb has already carried it clear of the pad; give it way on.
 	s.V = gmath.HeadingVec(s.Heading).Scale(220)
-	s.P = p.P.Add(gmath.HeadingVec(s.Heading).Scale(CollisionRange * 1.6))
 	if s.Kind == KindNPC {
 		w.Notify("%s LAUNCH %s — %d rounds, %d%% hull", s.Name, p.Label(),
 			s.Rounds, s.Health)
@@ -239,6 +236,24 @@ func (p *Planet) Setup(pop int) {
 	if p.Stock == nil {
 		p.Stock = make([]int, CommodityCount)
 	}
+}
+
+// Capital is a team's principal port: the most populous world it holds, and
+// therefore the one that can arm the most ships. It is deliberately a stable
+// choice rather than a near one — it is where a colour forms its flights, and
+// a rally point that moves is not a rally point.
+func (w *World) Capital(team Team) *Planet {
+	var best *Planet
+	for _, e := range w.Entities {
+		p, ok := e.(*Planet)
+		if !ok || p.Team != team {
+			continue
+		}
+		if best == nil || p.Pop > best.Pop {
+			best = p
+		}
+	}
+	return best
 }
 
 // ClosestPlanet finds the nearest planet a team can land on, or nil. Passing

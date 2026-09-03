@@ -82,6 +82,29 @@ func warRuns(t *testing.T, seed int64) {
 		t.Error("no pilot is carrying a working magazine — resupply never happened")
 	}
 
+	// The turnaround is animated, and it has to be visible in play rather
+	// than only in a unit test: over a real battle, ships must be caught at
+	// part scale on the way down and on the way up, not just at 0 and 1.
+	if seed == 1 {
+		w2 := loadSeed(t, "deathmatch.xml", seed)
+		w2.Notify = func(string, ...any) {}
+		buckets := map[int]int{}
+		for i := 0; i < 60*300; i++ {
+			w2.Update(dt)
+			for _, e := range w2.Entities {
+				if sh, ok := e.(*world.Ship); ok && sh.Docked() {
+					buckets[int(sh.LandFrac()*4)]++
+				}
+			}
+		}
+		for b := 0; b < 4; b++ {
+			if buckets[b] == 0 {
+				t.Errorf("no ship was ever drawn at %d0%%–%d0%% of the way down",
+					b*25/10, (b+1)*25/10)
+			}
+		}
+	}
+
 	// The war costs the planets something. If industry never draws down,
 	// nothing is being paid for and territory can never be starved.
 	var ip, ipMax float64

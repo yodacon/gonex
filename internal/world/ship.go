@@ -38,6 +38,26 @@ const (
 	hotelMW        = 0.4
 )
 
+// padPhase is where a ship is in a turnaround.
+type padPhase int
+
+const (
+	padOff padPhase = iota
+	padDescend
+	padServe
+	padAscend
+)
+
+const (
+	// How long the approach and the departure take to draw. This is real
+	// time out of the fight, not decoration: a ship coming down is already
+	// off the board, and one climbing out is not yet back on it.
+	descendSecs = 1.1
+	ascendSecs  = 1.2
+	// How far out the ship starts its climb from, and ends its descent to.
+	padStandoff = CollisionRange * 2.2
+)
+
 // Role biases what a hull is for. It is a bias and never an exclusion: a
 // warship's hold is small but never zero, because a fighter with a few tons
 // spare is a fighter that will detour for salvage.
@@ -93,9 +113,14 @@ type Ship struct {
 	Junk      float64     // tons of salvage aboard, sold on landing
 	Grid      *power.Grid // generator plus batteries, scaled from the hull
 
-	// Where the ship is in a turnaround, if it is in one.
-	Pad   *Planet
-	PadCD float64
+	// Where the ship is in a turnaround, if it is in one. A turnaround is
+	// three phases, not a teleport: the ship flies down into the port and
+	// shrinks away, sits while the yard works, then grows back out of it.
+	Pad       *Planet
+	PadCD     float64 // the service clock, phasePad only
+	padSt     padPhase
+	padT      float64 // 0 = full size in the sky, 1 = swallowed by the port
+	padAnchor gmath.Vec2
 
 	fireCD     float64
 	rechargeCD float64
@@ -154,8 +179,13 @@ func (s *Ship) HoldTons() float64 {
 // HoldFree is the deck space left.
 func (s *Ship) HoldFree() float64 { return math.Max(s.HoldMax-s.HoldTons(), 0) }
 
-// Docked reports whether the ship is on a pad, out of the fight.
-func (s *Ship) Docked() bool { return s.PadCD > 0 }
+// Docked reports whether the ship is in a turnaround — descending, being
+// worked on, or climbing out. In all three it is off the board.
+func (s *Ship) Docked() bool { return s.Pad != nil }
+
+// LandFrac is how far into the port the ship is drawn: 0 in the sky at full
+// size, 1 swallowed. The renderer scales the sprite by what is left.
+func (s *Ship) LandFrac() float64 { return s.padT }
 
 // RoundsFrac is the magazine as a fraction, for gauges and bingo checks.
 func (s *Ship) RoundsFrac() float64 {
@@ -258,11 +288,7 @@ func (s *Ship) Update(w *World, dt float64) {
 	// A ship on a pad is out of the world: no controller, no drive, no gun.
 	// It is buying its next sortie, and the cost is that it is not flying it.
 	if s.Docked() {
-		s.V = gmath.Vec2{}
-		s.P = s.Pad.P
-		if s.PadCD -= dt; s.PadCD <= 0 {
-			s.Pad.Launch(w, s)
-		}
+		s.updatePad(w, dt)
 		return
 	}
 
@@ -304,6 +330,56 @@ func (s *Ship) Update(w *World, dt float64) {
 		s.FaceToward(w, s.Target.P, dt)
 	}
 }
+
+// updatePad flies the turnaround. The ship is drawn along a line between the
+// port and a standoff point outside it, shrinking as it goes in and growing
+// as it comes out; the yard's work happens at the bottom, where it is not
+// visible and not shootable.
+func (s *Ship) updatePad(w *World, dt float64) {
+	p := s.Pad
+	s.V = gmath.Vec2{}
+	switch s.padSt {
+	case padDescend:
+		s.padT = math.Min(s.padT+dt/descendSecs, 1)
+		s.P = s.padAnchor.Lerp(p.P, ease(s.padT))
+		if s.padT >= 1 {
+			s.touchdown(w, p)
+		}
+
+	case padServe:
+		s.P = p.P
+		if s.PadCD -= dt; s.PadCD <= 0 {
+			// Point the climb somewhere clear and remember where it ends.
+			s.Heading = float64(w.Rand.Intn(360))
+			s.padAnchor = p.P.Add(gmath.HeadingVec(s.Heading).Scale(padStandoff))
+			s.padSt = padAscend
+		}
+
+	case padAscend:
+		s.padT = math.Max(s.padT-dt/ascendSecs, 0)
+		s.P = s.padAnchor.Lerp(p.P, ease(s.padT))
+		if s.padT <= 0 {
+			p.Launch(w, s)
+		}
+
+	default:
+		p.Launch(w, s) // shouldn't happen; never strand a ship on a pad
+	}
+}
+
+// touchdown is the transaction, at the bottom of the approach.
+func (s *Ship) touchdown(w *World, p *Planet) {
+	svc := p.serve(s)
+	s.PadCD = svc.secs()
+	s.padSt = padServe
+	if s.Kind == KindNPC {
+		w.Notify("%s LAND %s — %s", s.Name, p.Label(), svc.line())
+	}
+}
+
+// ease is a smoothstep, so the ship settles onto the pad and lifts off it
+// instead of sliding at a constant rate.
+func ease(t float64) float64 { return t * t * (3 - 2*t) }
 
 // stepGrid resolves an NPC's power plant on a coarse tick. The player's grid
 // is the engineering panel's business and is stepped there, per frame.

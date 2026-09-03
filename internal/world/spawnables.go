@@ -152,6 +152,13 @@ type Planet struct {
 	Scrap   float64 // tons of salvage in the yard
 	Pad     []*Ship // ships turning around right now
 
+	// Rally is the AI's muster slot for this port: whatever flight is forming
+	// up here. The simulation never looks inside it — it is stored here only
+	// because the port is the obvious rendezvous, and hanging it off the
+	// planet makes joining a flight a pointer read instead of a search over
+	// every ship in the system.
+	Rally any
+
 	creditAcc float64 // sub-credit revenue carried between ticks
 }
 

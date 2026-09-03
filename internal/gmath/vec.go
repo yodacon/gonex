@@ -15,6 +15,11 @@ func (v Vec2) Scale(s float64) Vec2 { return Vec2{v.X * s, v.Y * s} }
 func (v Vec2) Len() float64         { return math.Hypot(v.X, v.Y) }
 
 // Norm returns the unit vector, or the zero vector for zero input.
+// Lerp walks from v toward o, t in 0..1.
+func (v Vec2) Lerp(o Vec2, t float64) Vec2 {
+	return Vec2{v.X + (o.X-v.X)*t, v.Y + (o.Y-v.Y)*t}
+}
+
 func (v Vec2) Norm() Vec2 {
 	l := v.Len()
 	if l == 0 {

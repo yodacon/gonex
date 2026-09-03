@@ -159,27 +159,27 @@ func TestSquadronsFlyDifferentOrders(t *testing.T) {
 		orders[d.Name()]++
 		aggro[d.Aggro] = true
 	}
-	if ships != 36 {
-		t.Errorf("%d pilots, want 36", ships)
+	if ships != 72 {
+		t.Errorf("%d pilots, want 72", ships)
 	}
 	if armed != ships {
 		t.Errorf("%d of %d pilots launched loaded", armed, ships)
 	}
-	// Five guards, three after each of two colours, one on the deck — per team.
-	if orders["guard"] != 15 {
-		t.Errorf("%d guards, want 15", orders["guard"])
+	// Ten guards, six after each of two colours, two on the deck — per team.
+	if orders["guard"] != 30 {
+		t.Errorf("%d guards, want 30", orders["guard"])
 	}
-	if orders["escort"] != 3 {
-		t.Errorf("%d escorts, want 3", orders["escort"])
+	if orders["escort"] != 6 {
+		t.Errorf("%d escorts, want 6", orders["escort"])
 	}
 	for _, inv := range []string{"invade:1", "invade:2", "invade:3"} {
-		if orders[inv] != 6 {
-			t.Errorf("%d pilots on %s, want 6", orders[inv], inv)
+		if orders[inv] != 12 {
+			t.Errorf("%d pilots on %s, want 12", orders[inv], inv)
 		}
 	}
-	// Every pilot draws its own tunings: 36 ships must not share one number.
-	if len(aggro) < 30 {
-		t.Errorf("only %d distinct engagement ranges across 36 pilots", len(aggro))
+	// Every pilot draws its own tunings: 72 ships must not share one number.
+	if len(aggro) < 60 {
+		t.Errorf("only %d distinct engagement ranges across 72 pilots", len(aggro))
 	}
 }
 
@@ -193,8 +193,8 @@ func TestHaulersCarryMoreThanWarships(t *testing.T) {
 			hauler = s
 		}
 	}
-	if haulers != 3 {
-		t.Fatalf("%d haulers in the roster, want one a colour", haulers)
+	if haulers != 6 {
+		t.Fatalf("%d haulers in the roster, want two a colour", haulers)
 	}
 
 	// Same hull, other role: the only difference is the deck.

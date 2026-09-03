@@ -143,6 +143,16 @@ func (r *Renderer) DrawWorld(dst *ebiten.Image, w *world.World, cam *camera.Came
 
 func (r *Renderer) drawShip(dst *ebiten.Image, s *world.Ship, sp gmath.Vec2) {
 	sprite := r.Catalog.Get(s.ShipID).SpriteFor(s.Heading)
+
+	// A ship in a turnaround is drawn shrinking into the port and growing
+	// back out of it, so a landing reads as a landing from across the map.
+	if f := s.LandFrac(); f > 0 {
+		scale := 1 - f
+		if scale > 0.02 {
+			drawScaled(dst, sprite, sp, scale, float32(scale))
+		}
+		return // no health bar on a ship that is not on the board
+	}
 	drawCentered(dst, sprite, sp, 1)
 
 	// Health bar just under the sprite.
@@ -169,6 +179,21 @@ func (r *Renderer) drawExplosion(dst *ebiten.Image, ex *world.Explosion, sp gmat
 	for _, d := range [][2]float64{{off, off}, {-off, -off}, {off, -off}, {-off, off}} {
 		drawScaledAt(dst, frame, sp.X-ex.Size/2+d[0], sp.Y-ex.Size/2+d[1], ex.Size, 0.125)
 	}
+}
+
+// drawScaled draws an image about its centre at a scale, for the pad
+// animation. Scaling has to happen around the sprite's middle or the ship
+// slides sideways as it shrinks.
+func drawScaled(dst, img *ebiten.Image, sp gmath.Vec2, scale float64, alpha float32) {
+	b := img.Bounds()
+	w, h := float64(b.Dx()), float64(b.Dy())
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Translate(-w/2, -h/2)
+	op.GeoM.Scale(scale, scale)
+	op.GeoM.Translate(sp.X, sp.Y)
+	op.Filter = ebiten.FilterLinear
+	op.ColorScale.ScaleAlpha(alpha)
+	dst.DrawImage(img, op)
 }
 
 func drawCentered(dst, img *ebiten.Image, sp gmath.Vec2, alpha float32) {
