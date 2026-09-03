@@ -233,6 +233,11 @@ func (a *App) newGame(scenePath string) {
 		return
 	}
 	player := w.NewShip(a.Cfg.PlayerShipID, world.Team(a.Cfg.Team), a.Cfg.PlayerName, world.KindLocal)
+	// Launch from your own colour's pad, where the squadron is and where you
+	// will respawn anyway — not adrift in the middle of the map.
+	if sp := w.SpawnPointFor(player.Team); sp != nil {
+		player.P = sp.P
+	}
 	w.MainPlayer, w.ViewShip = player, player
 
 	a.World = w

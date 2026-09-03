@@ -154,12 +154,23 @@ func (a *App) enterSystem(sysID int) {
 	// out of carries a population, a treasury and a pad queue, and sweeping
 	// it away leaves a squadron with nowhere to land — every pilot reporting
 	// "RTB no port" over a sky full of planets it does not own.
+	stellars := a.gal.StellarsIn(sysID)
+	inSystem := make(map[int]bool, len(stellars))
+	for _, id := range stellars {
+		inSystem[id] = true
+	}
+
 	live := a.World.Entities[:0]
 	held := map[int]bool{}
 	for _, e := range a.World.Entities {
 		pl, isPlanet := e.(*world.Planet)
-		if isPlanet && pl.Team == world.TeamNone {
-			continue // last system's scenery: that goes
+		// Only the LAST SYSTEM'S DRESSING goes: a gazetteer stellar nobody
+		// holds that does not belong to the system being entered. Held worlds
+		// stay because they are somebody's home, and the map's own scenery
+		// (StellarID 0 — the contested ground a scene places by hand) stays
+		// because it is the map.
+		if isPlanet && pl.Team == world.TeamNone && pl.StellarID > 0 && !inSystem[pl.StellarID] {
+			continue
 		}
 		if isPlanet && pl.StellarID > 0 {
 			held[pl.StellarID] = true
@@ -168,7 +179,6 @@ func (a *App) enterSystem(sysID int) {
 	}
 	a.World.Entities = live
 
-	stellars := a.gal.StellarsIn(sysID)
 	cx, cy := a.World.MapW/2, a.World.MapH/2
 	for i, id := range stellars {
 		if held[id] {
@@ -186,8 +196,17 @@ func (a *App) enterSystem(sysID int) {
 		pl.Setup(city.PopulationOf(id))
 		a.World.Add(pl)
 	}
-	a.Console.Notifyf("Arrived: %s system (%s) — %d stellar(s)",
-		sys.Name, sys.Govt, len(stellars))
+	var standing, holdings int
+	for _, e := range a.World.Entities {
+		if pl, ok := e.(*world.Planet); ok {
+			standing++
+			if pl.Team != world.TeamNone {
+				holdings++
+			}
+		}
+	}
+	a.Console.Notifyf("Arrived: %s system (%s) — %d stellar(s), %d planet(s), %d held",
+		sys.Name, sys.Govt, len(stellars), standing, holdings)
 }
 
 // nearbyStellar finds a dockable planet within landing range of the player.
