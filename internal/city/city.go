@@ -247,3 +247,36 @@ func Generate(seed int64) *Port {
 	})
 	return p
 }
+
+// --- the port as an economic quantity ------------------------------------
+
+// PeoplePerKm2 turns occupied floor area into a headcount. A port's industry
+// is downstream of this number, so the skyline the pilot lands in IS the stat
+// that supplies the fleet — no second table to keep in sync with the art.
+const PeoplePerKm2 = 2200
+
+// Density is the port's crowding, drawn once per city. Every port is grown
+// to the same extents, so footprint alone makes every world the same size;
+// real ports differ in how hard they are packed. This is the spread that
+// makes one planet worth more than another.
+func (p *Port) Density() float64 { return 0.35 + unit(hash2(p.Seed, 3, 3))*1.55 }
+
+// SeedFor is the per-stellar city seed. Every caller must use this: the port
+// on the landing screen and the port behind a planet's industrial capacity
+// have to be the same city.
+func SeedFor(stellarID int) int64 { return int64(stellarID) * 7919 }
+
+// Population estimates the metropolis's headcount from the skyline it grew:
+// occupied floor area, at PeoplePerKm2. Same seed, same city, same number.
+func (p *Port) Population() int {
+	var floorKm2 float64
+	for _, b := range p.Buildings {
+		floors := math.Max(math.Round(b.H/FloorKm), 1)
+		floorKm2 += b.W * b.D * floors * b.Occ
+	}
+	return int(floorKm2 * PeoplePerKm2 * p.Density())
+}
+
+// PopulationOf grows a stellar's port just to count it. Callers that already
+// hold a Port should ask it directly.
+func PopulationOf(stellarID int) int { return Generate(SeedFor(stellarID)).Population() }

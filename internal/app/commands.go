@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"strconv"
 
 	"yodacon.org/gonex/internal/ai"
@@ -67,6 +68,52 @@ func (a *App) registerCommands() {
 			c.Printf("%s", line)
 		}
 	}, "listentities")
+
+	// The war economy readout: who holds what, and how long they can pay
+	// for it. This is the screen the supply war is actually fought on.
+	c.Register(func(c *console.Console, _ string) {
+		if !a.running() {
+			return
+		}
+		for _, e := range a.World.Entities {
+			p, ok := e.(*world.Planet)
+			if !ok {
+				continue
+			}
+			state := ""
+			if p.Starving() {
+				state = "  STARVING"
+			}
+			c.Printf("%-14s %-5s pop %7d  IP %6.1f/%-6.1f  cr %8d  scrap %5.0ft  pad %d/%d%s",
+				p.Label(), p.Team, p.Pop, p.IP, p.IPMax(), p.Credits,
+				p.Scrap, len(p.Pad), p.Berths(), state)
+		}
+	}, "planets", "listplanets")
+
+	// A squadron roster: what every pilot is flying with, and under whose
+	// orders. "Fleet is dry" is a thing you should be able to look up.
+	c.Register(func(c *console.Console, _ string) {
+		if !a.running() {
+			return
+		}
+		for _, e := range a.World.Entities {
+			s, ok := e.(*world.Ship)
+			if !ok || s.Kind != world.KindNPC {
+				continue
+			}
+			orders := "-"
+			if s.Controller != nil {
+				orders = s.Controller.Name()
+			}
+			where := "flying"
+			if s.Docked() {
+				where = fmt.Sprintf("pad %.1fs", s.PadCD)
+			}
+			c.Printf("%-10s %-5s %-9s %-10s rnd %4d/%-4d hull %3d  batt %3.0f%%  %s",
+				s.Name, s.Team, s.Role, orders, s.Rounds, s.RoundsMax,
+				s.Health, s.Grid.BattFrac()*100, where)
+		}
+	}, "fleet", "roster")
 
 	c.Register(func(c *console.Console, _ string) {
 		for id := 1; id <= a.Catalog.Count(); id++ {

@@ -1,44 +1,51 @@
 <?xml version="1.0" encoding="utf-8"?>
 <scene>
   <map filename="data/maps/triforce.xml" />
+
+  <!-- Twelve pilots a colour, and none of them fly the same sortie.
+       Five hold station over the capital; six go out after a named
+       enemy colour; one runs the deck. Every one of them carries its
+       own jittered ranges and its own bingo number, so a squadron
+       reads as a dozen fliers rather than one program twelve times. -->
   <actors>
-    <actor xpos="1000" ypos="4500" shipid="1" team="1" name="Jimmy" />
-    <actor xpos="1000" ypos="4500" shipid="2" team="1" name="Jimmy" />
-    <actor xpos="1000" ypos="4500" shipid="3" team="1" name="Jimmy" />
-    <actor xpos="1000" ypos="4500" shipid="4" team="1" name="Jimmy" />
-    <actor xpos="1000" ypos="4500" shipid="5" team="1" name="Jimmy" />
-    <actor xpos="1000" ypos="4500" shipid="6" team="1" name="Jimmy" />
-    <actor xpos="1000" ypos="4500" shipid="7" team="1" name="Jimmy" />
-    <actor xpos="1000" ypos="4500" shipid="8" team="1" name="Jimmy" />
-    <actor xpos="1000" ypos="4500" shipid="9" team="1" name="Jimmy" />
-    <actor xpos="1000" ypos="4500" shipid="10" team="1" name="Jimmy" />
-    <actor xpos="1000" ypos="4500" shipid="11" team="1" name="Jimmy" />
-    <actor xpos="1000" ypos="4500" shipid="12" team="1" name="Jimmy" />
+    <actor xpos="1000" ypos="4500" shipid="1" team="1" name="Red 1" doctrine="guard" />
+    <actor xpos="1000" ypos="4500" shipid="2" team="1" name="Red 2" doctrine="guard" />
+    <actor xpos="1000" ypos="4500" shipid="3" team="1" name="Red 3" doctrine="guard" />
+    <actor xpos="1000" ypos="4500" shipid="4" team="1" name="Red 4" doctrine="guard" />
+    <actor xpos="1000" ypos="4500" shipid="5" team="1" name="Red 5" doctrine="guard" />
+    <actor xpos="1000" ypos="4500" shipid="6" team="1" name="Red 6" doctrine="invade:2" />
+    <actor xpos="1000" ypos="4500" shipid="7" team="1" name="Red 7" doctrine="invade:2" />
+    <actor xpos="1000" ypos="4500" shipid="8" team="1" name="Red 8" doctrine="invade:2" />
+    <actor xpos="1000" ypos="4500" shipid="9" team="1" name="Red 9" doctrine="invade:3" />
+    <actor xpos="1000" ypos="4500" shipid="10" team="1" name="Red 10" doctrine="invade:3" />
+    <actor xpos="1000" ypos="4500" shipid="11" team="1" name="Red 11" doctrine="invade:3" />
+    <actor xpos="1000" ypos="4500" shipid="12" team="1" name="Red 12" doctrine="escort" role="hauler" />
 
-    <actor xpos="8000" ypos="1000" shipid="1" team="2" name="Jimmy" />
-    <actor xpos="8000" ypos="1000" shipid="2" team="2" name="Jimmy" />
-    <actor xpos="8000" ypos="1000" shipid="3" team="2" name="Jimmy" />
-    <actor xpos="8000" ypos="1000" shipid="4" team="2" name="Jimmy" />
-    <actor xpos="8000" ypos="1000" shipid="5" team="2" name="Jimmy" />
-    <actor xpos="8000" ypos="1000" shipid="6" team="2" name="Jimmy" />
-    <actor xpos="8000" ypos="1000" shipid="7" team="2" name="Jimmy" />
-    <actor xpos="8000" ypos="1000" shipid="8" team="2" name="Jimmy" />
-    <actor xpos="8000" ypos="1000" shipid="9" team="2" name="Jimmy" />
-    <actor xpos="8000" ypos="1000" shipid="10" team="2" name="Jimmy" />
-    <actor xpos="8000" ypos="1000" shipid="11" team="2" name="Jimmy" />
-    <actor xpos="8000" ypos="1000" shipid="12" team="2" name="Jimmy" />
+    <actor xpos="8000" ypos="1000" shipid="1" team="2" name="Green 1" doctrine="guard" />
+    <actor xpos="8000" ypos="1000" shipid="2" team="2" name="Green 2" doctrine="guard" />
+    <actor xpos="8000" ypos="1000" shipid="3" team="2" name="Green 3" doctrine="guard" />
+    <actor xpos="8000" ypos="1000" shipid="4" team="2" name="Green 4" doctrine="guard" />
+    <actor xpos="8000" ypos="1000" shipid="5" team="2" name="Green 5" doctrine="guard" />
+    <actor xpos="8000" ypos="1000" shipid="6" team="2" name="Green 6" doctrine="invade:3" />
+    <actor xpos="8000" ypos="1000" shipid="7" team="2" name="Green 7" doctrine="invade:3" />
+    <actor xpos="8000" ypos="1000" shipid="8" team="2" name="Green 8" doctrine="invade:3" />
+    <actor xpos="8000" ypos="1000" shipid="9" team="2" name="Green 9" doctrine="invade:1" />
+    <actor xpos="8000" ypos="1000" shipid="10" team="2" name="Green 10" doctrine="invade:1" />
+    <actor xpos="8000" ypos="1000" shipid="11" team="2" name="Green 11" doctrine="invade:1" />
+    <actor xpos="8000" ypos="1000" shipid="12" team="2" name="Green 12" doctrine="escort" role="hauler" />
 
-    <actor xpos="8000" ypos="8000" shipid="1" team="3" name="Jimmy" />
-    <actor xpos="8000" ypos="8000" shipid="2" team="3" name="Jimmy" />
-    <actor xpos="8000" ypos="8000" shipid="3" team="3" name="Jimmy" />
-    <actor xpos="8000" ypos="8000" shipid="4" team="3" name="Jimmy" />
-    <actor xpos="8000" ypos="8000" shipid="5" team="3" name="Jimmy" />
-    <actor xpos="8000" ypos="8000" shipid="6" team="3" name="Jimmy" />
-    <actor xpos="8000" ypos="8000" shipid="7" team="3" name="Jimmy" />
-    <actor xpos="8000" ypos="8000" shipid="8" team="3" name="Jimmy" />
-    <actor xpos="8000" ypos="8000" shipid="9" team="3" name="Jimmy" />
-    <actor xpos="8000" ypos="8000" shipid="10" team="3" name="Jimmy" />
-    <actor xpos="8000" ypos="8000" shipid="11" team="3" name="Jimmy" />
-    <actor xpos="8000" ypos="8000" shipid="12" team="3" name="Jimmy" />
+    <actor xpos="8000" ypos="8000" shipid="1" team="3" name="Blue 1" doctrine="guard" />
+    <actor xpos="8000" ypos="8000" shipid="2" team="3" name="Blue 2" doctrine="guard" />
+    <actor xpos="8000" ypos="8000" shipid="3" team="3" name="Blue 3" doctrine="guard" />
+    <actor xpos="8000" ypos="8000" shipid="4" team="3" name="Blue 4" doctrine="guard" />
+    <actor xpos="8000" ypos="8000" shipid="5" team="3" name="Blue 5" doctrine="guard" />
+    <actor xpos="8000" ypos="8000" shipid="6" team="3" name="Blue 6" doctrine="invade:1" />
+    <actor xpos="8000" ypos="8000" shipid="7" team="3" name="Blue 7" doctrine="invade:1" />
+    <actor xpos="8000" ypos="8000" shipid="8" team="3" name="Blue 8" doctrine="invade:1" />
+    <actor xpos="8000" ypos="8000" shipid="9" team="3" name="Blue 9" doctrine="invade:2" />
+    <actor xpos="8000" ypos="8000" shipid="10" team="3" name="Blue 10" doctrine="invade:2" />
+    <actor xpos="8000" ypos="8000" shipid="11" team="3" name="Blue 11" doctrine="invade:2" />
+    <actor xpos="8000" ypos="8000" shipid="12" team="3" name="Blue 12" doctrine="escort" role="hauler" />
+
   </actors>
 </scene>

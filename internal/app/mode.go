@@ -8,6 +8,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 
+	"yodacon.org/gonex/internal/city"
 	"yodacon.org/gonex/internal/gmath"
 	"yodacon.org/gonex/internal/ui"
 	"yodacon.org/gonex/internal/world"
@@ -148,25 +149,42 @@ func (a *App) enterSystem(sysID int) {
 	if sys == nil || a.World == nil {
 		return
 	}
+	// Arriving in a system re-dresses the sky with that system's stellars,
+	// but HELD WORLDS ARE NOT SCENERY. A planet somebody's colour is flying
+	// out of carries a population, a treasury and a pad queue, and sweeping
+	// it away leaves a squadron with nowhere to land — every pilot reporting
+	// "RTB no port" over a sky full of planets it does not own.
 	live := a.World.Entities[:0]
+	held := map[int]bool{}
 	for _, e := range a.World.Entities {
-		if _, isPlanet := e.(*world.Planet); !isPlanet {
-			live = append(live, e)
+		pl, isPlanet := e.(*world.Planet)
+		if isPlanet && pl.Team == world.TeamNone {
+			continue // last system's scenery: that goes
 		}
+		if isPlanet && pl.StellarID > 0 {
+			held[pl.StellarID] = true
+		}
+		live = append(live, e)
 	}
 	a.World.Entities = live
 
 	stellars := a.gal.StellarsIn(sysID)
 	cx, cy := a.World.MapW/2, a.World.MapH/2
 	for i, id := range stellars {
+		if held[id] {
+			continue // already standing, and somebody lives there
+		}
 		ang := 2 * math.Pi * float64(i) / float64(len(stellars))
 		r := a.World.MapW * 0.22
 		st := a.gal.Stellars[id]
-		a.World.Add(&world.Planet{
+		pl := &world.Planet{
 			Body:      world.Body{P: gmath.V(cx+math.Cos(ang)*r, cy+math.Sin(ang)*r)},
 			SpriteID:  1 + st.Sprite%18,
 			StellarID: id,
-		})
+			Name:      st.Name,
+		}
+		pl.Setup(city.PopulationOf(id))
+		a.World.Add(pl)
 	}
 	a.Console.Notifyf("Arrived: %s system (%s) — %d stellar(s)",
 		sys.Name, sys.Govt, len(stellars))

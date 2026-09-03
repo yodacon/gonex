@@ -278,7 +278,7 @@ func (a *App) launchEscorts() {
 	for i, id := range a.voy.Escorts {
 		s := w.NewShip(id, p.Team, fmt.Sprintf("Escort %d", i+1), world.KindNPC)
 		s.Escort = true
-		s.Controller = ai.ByName("rabies")
+		s.Controller = ai.Parse("escort", w.Rand) // hired guns roam with the player
 		s.P = p.P.Add(gmath.V(float64(90+50*i), float64(-60+40*i)))
 	}
 }
@@ -464,6 +464,12 @@ func (a *App) updateDock() {
 			} else if v.RCSFuel < v.RCSMax-0.2 && v.Credits >= 3 {
 				v.RCSFuel += 0.4
 				v.Credits -= 3
+			} else if p := a.World.MainPlayer; p != nil && p.Rounds < p.RoundsMax &&
+				v.Credits >= world.RoundCr*4 {
+				// the armoury: the last meter on the walk, same price the
+				// AI's planets pay at their own pads
+				p.Rounds = min(p.Rounds+4, p.RoundsMax)
+				v.Credits -= world.RoundCr * 4
 			}
 		case inpututil.IsKeyJustPressed(ebiten.KeyY):
 			if cost := v.RepairCost(); cost > 0 && v.Credits >= cost {

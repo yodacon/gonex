@@ -130,8 +130,8 @@ func (w *World) ClosestEnemy(s *Ship) *Ship {
 	var nearest *Ship
 	for _, e := range w.Entities {
 		o, ok := e.(*Ship)
-		if !ok || o == s || o.Team == s.Team || !o.Alive() {
-			continue
+		if !ok || o == s || o.Team == s.Team || !o.Alive() || o.Docked() {
+			continue // a ship on a pad cannot be hit, so it is not a target
 		}
 		if d := o.Pos().Sub(s.Pos()).Len(); d < nearestDist {
 			nearestDist, nearest = d, o

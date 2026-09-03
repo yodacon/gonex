@@ -60,12 +60,24 @@ type shipState struct {
 	Deaths  int
 	Crew    int
 	AI      string `json:",omitempty"`
+
+	Role   int     `json:",omitempty"`
+	Rounds int     `json:",omitempty"`
+	Hold   []int   `json:",omitempty"`
+	Junk   float64 `json:",omitempty"`
+	BattMJ float64 `json:",omitempty"`
 }
 
 type placement struct {
-	Pos    gmath.Vec2
-	Sprite int `json:",omitempty"`
-	Team   int `json:",omitempty"`
+	Pos     gmath.Vec2
+	Sprite  int     `json:",omitempty"`
+	Team    int     `json:",omitempty"`
+	Stellar int     `json:",omitempty"`
+	Name    string  `json:",omitempty"`
+	Pop     int     `json:",omitempty"`
+	IP      float64 `json:",omitempty"`
+	Credits int     `json:",omitempty"`
+	Scrap   float64 `json:",omitempty"`
 }
 
 type snapshot struct {
@@ -89,6 +101,10 @@ func Write(w *world.World, pilot *PilotState, path string) error {
 				Team: int(v.Team), Name: v.Name, Kind: int(v.Kind),
 				Health: v.Health, Money: v.Money, Frags: v.Frags,
 				Deaths: v.Deaths, Crew: v.Crew,
+				Role: int(v.Role), Rounds: v.Rounds, Hold: v.Hold, Junk: v.Junk,
+			}
+			if v.Grid != nil {
+				st.BattMJ = v.Grid.BattMJ
 			}
 			if v.Controller != nil {
 				st.AI = v.Controller.Name()
@@ -98,7 +114,11 @@ func Write(w *world.World, pilot *PilotState, path string) error {
 			}
 			snap.Ships = append(snap.Ships, st)
 		case *world.Planet:
-			snap.Planets = append(snap.Planets, placement{Pos: v.P, Sprite: v.SpriteID})
+			snap.Planets = append(snap.Planets, placement{
+				Pos: v.P, Sprite: v.SpriteID, Team: int(v.Team), Name: v.Name,
+				Stellar: v.StellarID, Pop: v.Pop, IP: v.IP,
+				Credits: v.Credits, Scrap: v.Scrap,
+			})
 		case *world.SpawnPoint:
 			snap.Spawns = append(snap.Spawns, placement{Pos: v.P, Team: int(v.Team)})
 		}
@@ -124,7 +144,16 @@ func Read(w *world.World, path string) (*PilotState, error) {
 
 	w.MapW, w.MapH, w.Scores = snap.MapW, snap.MapH, snap.Scores
 	for _, p := range snap.Planets {
-		w.Add(&world.Planet{Body: world.Body{P: p.Pos}, SpriteID: p.Sprite})
+		pl := &world.Planet{
+			Body: world.Body{P: p.Pos}, SpriteID: p.Sprite,
+			Team: world.Team(p.Team), Name: p.Name, StellarID: p.Stellar,
+		}
+		pl.Setup(p.Pop)
+		// A restored planet keeps the ledger it had, not a fresh buffer.
+		if p.Pop > 0 {
+			pl.IP, pl.Credits, pl.Scrap = p.IP, p.Credits, p.Scrap
+		}
+		w.Add(pl)
 	}
 	for _, sp := range snap.Spawns {
 		w.Add(&world.SpawnPoint{Body: world.Body{P: sp.Pos}, Team: world.Team(sp.Team)})
@@ -134,8 +163,21 @@ func Read(w *world.World, path string) (*PilotState, error) {
 		s.P, s.V, s.Heading = st.Pos, st.Vel, st.Heading
 		s.Health, s.Money, s.Frags = st.Health, st.Money, st.Frags
 		s.Deaths, s.Crew = st.Deaths, st.Crew
+		// Crew and role size the manifest, so re-outfit before restoring it.
+		s.Role = world.Role(st.Role)
+		s.Outfit(w)
+		if st.Hold != nil {
+			copy(s.Hold, st.Hold)
+		}
+		s.Junk = st.Junk
+		if st.Rounds > 0 {
+			s.Rounds = st.Rounds
+		}
+		if st.BattMJ > 0 && s.Grid != nil {
+			s.Grid.BattMJ = st.BattMJ
+		}
 		if s.Kind == world.KindNPC {
-			s.Controller = ai.ByName(st.AI)
+			s.Controller = ai.Parse(st.AI, w.Rand)
 		}
 		if i == snap.MainPlayer {
 			w.MainPlayer, w.ViewShip = s, s

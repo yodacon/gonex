@@ -56,9 +56,11 @@ func (p engPreset) shares() (thrust, screens, hotel float64) {
 }
 
 const (
-	shotCapMJ      = 6.0 // one gun shot off the capacitors
-	shieldMJPerDmg = 2.0 // capacitor MJ to eat one point of missile damage
-	boostCapMJ     = 30  // the entry coil overdrive, paid up front
+	// shotCapMJ / shieldMJPerDmg live in internal/power so that an NPC's
+	// trigger and the player's cost exactly the same energy.
+	shotCapMJ      = power.ShotMJ
+	shieldMJPerDmg = power.ShieldMJPerDmg
+	boostCapMJ     = 30 // the entry coil overdrive, paid up front
 )
 
 // wireGrid connects the world's combat hooks to the voyage's grid: shots
@@ -69,7 +71,7 @@ func (a *App) wireGrid() {
 		return
 	}
 	w.FireGate = func() bool {
-		if v.Grid.SpendCap(shotCapMJ) < 1 {
+		if !v.Grid.TrySpendCap(shotCapMJ) {
 			a.engNotify("Capacitors dry — guns cold. (E: SCREENS refills them.)")
 			return false
 		}
@@ -125,9 +127,9 @@ func (a *App) drawEngPanel(screen *ebiten.Image) {
 		return
 	}
 	g := v.Grid
-	x, y := 8.0, float64(ScreenH-92)
+	x, y := 8.0, float64(ScreenH-110)
 	w := 176.0
-	vector.DrawFilledRect(screen, float32(x-4), float32(y-18), float32(w+8), 88,
+	vector.DrawFilledRect(screen, float32(x-4), float32(y-18), float32(w+8), 106,
 		premul(color.RGBA{5, 7, 10, 255}, 0.72), false)
 	ui.DrawText(screen, fmt.Sprintf("ENG · %s (E)", a.engPreset), x, y-14, 0.8)
 	bar := func(row int, frac float64, c color.RGBA, label string) {
@@ -144,6 +146,13 @@ func (a *App) drawEngPanel(screen *ebiten.Image) {
 		heatCol = colBad
 	}
 	bar(2, g.HeatFrac(), heatCol, fmt.Sprintf("HEAT %3.0f%%", g.HeatFrac()*100))
+	if p := a.World.MainPlayer; p != nil && p.RoundsMax > 0 {
+		c := colChrome
+		if p.RoundsFrac() <= 0.15 {
+			c = colBad
+		}
+		bar(3, p.RoundsFrac(), c, fmt.Sprintf("RNDS %4d", p.Rounds))
+	}
 	ui.DrawText(screen, fmt.Sprintf("reactor %.1f MW · plant +%.0f t", g.ReactorMW, g.OutfitKg/1000),
-		x, y+62, 0.65)
+		x, y+80, 0.65)
 }

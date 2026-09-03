@@ -85,6 +85,27 @@ func onScreen(sp gmath.Vec2, margin, w, h float64) bool {
 	return sp.X > -margin && sp.X < w+margin && sp.Y > -margin && sp.Y < h+margin
 }
 
+// drawHolding rings a held planet in its team's colour and draws the pad
+// queue as ticks beneath it. Territory has to be readable at a glance or the
+// supply war is invisible.
+func drawHolding(dst *ebiten.Image, p *world.Planet, sp gmath.Vec2) {
+	if p.Team == world.TeamNone {
+		return
+	}
+	c := TeamColor(p.Team, true)
+	c.A = 150
+	if p.Starving() {
+		c.A = 60 // a world that can no longer arm its ships dims
+	}
+	const rad = 46
+	vector.StrokeCircle(dst, float32(sp.X), float32(sp.Y), rad, 2,
+		c, false)
+	for i := range p.Pad {
+		vector.DrawFilledRect(dst, float32(sp.X)-14+float32(i)*8,
+			float32(sp.Y)+rad+4, 5, 5, c, false)
+	}
+}
+
 // DrawWorld renders every visible entity. Explosions draw last so they cover
 // the ships that produced them.
 func (r *Renderer) DrawWorld(dst *ebiten.Image, w *world.World, cam *camera.Camera) {
@@ -99,6 +120,7 @@ func (r *Renderer) DrawWorld(dst *ebiten.Image, w *world.World, cam *camera.Came
 			if v.SpriteID >= 1 && v.SpriteID <= planetCount {
 				drawCentered(dst, r.planets[v.SpriteID], sp, 1)
 			}
+			drawHolding(dst, v, sp)
 		case *world.Item:
 			if v.Type == world.ItemHealth {
 				drawCentered(dst, r.health, sp, 1)
@@ -214,7 +236,10 @@ func (r *Renderer) DrawMap(dst *ebiten.Image, w *world.World, x, y, width, heigh
 		size := float32(2)
 		switch v := e.(type) {
 		case *world.Planet:
-			c, size = color.RGBA{128, 128, 128, 255}, 3
+			c, size = TeamColor(v.Team, true), 4
+			if v.Team == world.TeamNone {
+				c, size = color.RGBA{128, 128, 128, 255}, 3
+			}
 		case *world.Ship:
 			switch {
 			case v == viewTarget:

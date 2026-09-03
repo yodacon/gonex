@@ -42,8 +42,8 @@ func (m *Missile) Update(w *World, dt float64) {
 			return
 		}
 		s, ok := e.(*Ship)
-		if !ok || s == m.Owner || s.Team == m.Owner.Team {
-			return
+		if !ok || s == m.Owner || s.Team == m.Owner.Team || s.Docked() {
+			return // a ship on the pad is out of the world, not a target
 		}
 		s.HitByMissile(w, m)
 		m.dead = true
@@ -130,14 +130,34 @@ func (it *Item) Update(w *World, dt float64) {
 
 // --- Static scenery ---
 
+// CommodityCount is the width of every cargo manifest in the game. It mirrors
+// len(market.Commodities); world cannot import market without dragging the
+// trading UI into the simulation, so the width is pinned here and asserted
+// against the market board in the app's tests.
+const CommodityCount = 6
+
 type Planet struct {
 	Body
 	SpriteID  int // 1-based index into the planet picture catalog
 	StellarID int // gazetteer spöb ID; 0 for scenery with no dock
+	Name      string
+	Team      Team // who holds it; TeamNone is neutral ground
+
+	// The industrial ledger. Pop comes from the city that grows on the
+	// surface, and everything the fleet needs is drawn against it.
+	Pop     int
+	IP      float64 // industrial points banked
+	Credits int
+	Stock   []int   // tons per commodity in the warehouse
+	Scrap   float64 // tons of salvage in the yard
+	Pad     []*Ship // ships turning around right now
+
+	creditAcc float64 // sub-credit revenue carried between ticks
 }
 
-func (p *Planet) Alive() bool            { return true }
-func (p *Planet) Update(*World, float64) {}
+func (p *Planet) Alive() bool { return true }
+
+func (p *Planet) Update(_ *World, dt float64) { p.Tick(dt) }
 
 type SpawnPoint struct {
 	Body

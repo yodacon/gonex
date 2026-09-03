@@ -37,6 +37,37 @@ func Stock() *Grid {
 	return g
 }
 
+// For scales the stock plant to a hull. A yard fits a plant proportional to
+// the tonnage it has to move, so a heavy carries more reactor and more
+// battery than an interceptor — and spends it faster. The Yodacon (5000 kg)
+// is the reference hull, which is what makes Stock and For agree.
+func For(massKg float64) *Grid {
+	k := massKg / 5000
+	if k < 0.4 {
+		k = 0.4
+	}
+	if k > 3 {
+		k = 3
+	}
+	g := Stock()
+	g.ReactorMW *= k
+	g.BattCapMJ *= k
+	g.CapCapMJ *= k
+	g.RadiatorMW *= k
+	g.HeatCapMJ *= k
+	g.BattMJ, g.CapMJ = g.BattCapMJ, g.CapCapMJ
+	return g
+}
+
+// What combat costs the capacitors. These live here, not in the app, because
+// an NPC pulling the trigger and the player pulling the trigger must spend
+// the same energy — the moment those two numbers diverge the game stops
+// being one economy and becomes two arguing ones.
+const (
+	ShotMJ         = 6.0 // one gun shot off the capacitors
+	ShieldMJPerDmg = 2.0 // capacitor MJ to eat one point of missile damage
+)
+
 // Load is one frame's demand on the grid, in MW.
 type Load struct {
 	Engines float64 // drive draw
@@ -112,6 +143,23 @@ func (g *Grid) SpendCap(mj float64) float64 {
 	got := math.Min(mj, g.CapMJ)
 	g.CapMJ -= got
 	return got / mj
+}
+
+// TrySpendCap draws mj only if the bank can cover it in full, reporting
+// whether it did. A gun is all-or-nothing: SpendCap's partial draw is right
+// for a shield eating what it can of a hit, but a trigger held down at frame
+// rate would otherwise swallow every joule that trickles in and never reach
+// the price of a single shot. That livelock leaves a ship permanently cold
+// with a charging bank, which is exactly as broken as it sounds.
+func (g *Grid) TrySpendCap(mj float64) bool {
+	if mj <= 0 {
+		return true
+	}
+	if g.CapMJ < mj {
+		return false
+	}
+	g.CapMJ -= mj
+	return true
 }
 
 // Gauge fractions for the panels.

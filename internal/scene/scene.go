@@ -9,6 +9,7 @@ import (
 
 	"yodacon.org/gonex/assets"
 	"yodacon.org/gonex/internal/ai"
+	"yodacon.org/gonex/internal/city"
 	"yodacon.org/gonex/internal/gmath"
 	"yodacon.org/gonex/internal/world"
 )
@@ -25,19 +26,28 @@ type sceneXML struct {
 }
 
 type placement struct {
-	X      float64 `xml:"xpos,attr"`
-	Y      float64 `xml:"ypos,attr"`
-	Sprite int     `xml:"sprite,attr"`
-	Team   int     `xml:"team,attr"`
+	X       float64 `xml:"xpos,attr"`
+	Y       float64 `xml:"ypos,attr"`
+	Sprite  int     `xml:"sprite,attr"`
+	Team    int     `xml:"team,attr"`
+	Name    string  `xml:"name,attr"`
+	Stellar int     `xml:"stellar,attr"` // gazetteer spöb ID: whose city grows here
+	Pop     int     `xml:"pop,attr"`     // explicit override; 0 means ask the city
 }
 
 type actorXML struct {
-	X      float64 `xml:"xpos,attr"`
-	Y      float64 `xml:"ypos,attr"`
-	ShipID int     `xml:"shipid,attr"`
-	Team   int     `xml:"team,attr"`
-	Name   string  `xml:"name,attr"`
+	X        float64 `xml:"xpos,attr"`
+	Y        float64 `xml:"ypos,attr"`
+	ShipID   int     `xml:"shipid,attr"`
+	Team     int     `xml:"team,attr"`
+	Name     string  `xml:"name,attr"`
+	Doctrine string  `xml:"doctrine,attr"` // guard | invade | invade:<team> | escort
+	Role     string  `xml:"role,attr"`     // warship | hauler
 }
+
+// defaultPop is what a planet with no gazetteer entry is worth: a modest
+// port, enough to arm a couple of ships at a time and no more.
+const defaultPop = 1200000
 
 // Load reads a scene file (e.g. "deathmatch.xml") and populates the world.
 func Load(w *world.World, path string) error {
@@ -65,7 +75,15 @@ func Load(w *world.World, path string) error {
 		}
 		s := w.NewShip(a.ShipID, world.Team(a.Team), name, world.KindNPC)
 		s.P = gmath.V(a.X, a.Y)
-		s.Controller = ai.Random(w.Rand)
+		if a.Role == "hauler" {
+			s.Role = world.RoleHauler
+			s.Outfit(w) // the role sets the deck, so re-size the manifest
+		}
+		if a.Doctrine == "" {
+			s.Controller = ai.Random(w.Rand)
+		} else {
+			s.Controller = ai.Parse(a.Doctrine, w.Rand)
+		}
 	}
 	return nil
 }
@@ -75,10 +93,25 @@ func applyMap(w *world.World, doc *sceneXML) {
 		w.MapW, w.MapH = doc.Map.Width, doc.Map.Height
 	}
 	for _, p := range doc.Planets {
-		w.Add(&world.Planet{
-			Body:     world.Body{P: gmath.V(p.X, p.Y)},
-			SpriteID: p.Sprite,
-		})
+		pl := &world.Planet{
+			Body:      world.Body{P: gmath.V(p.X, p.Y)},
+			SpriteID:  p.Sprite,
+			StellarID: p.Stellar,
+			Name:      p.Name,
+			Team:      world.Team(p.Team),
+		}
+		// Population is the city that grows on the surface — the same port,
+		// from the same seed, that the landing sequence flies the player
+		// into. The skyline IS the industrial capacity.
+		pop := p.Pop
+		if pop == 0 && p.Stellar > 0 {
+			pop = city.PopulationOf(p.Stellar)
+		}
+		if pop == 0 {
+			pop = defaultPop
+		}
+		pl.Setup(pop)
+		w.Add(pl)
 	}
 	for _, sp := range doc.Spawns {
 		w.Add(&world.SpawnPoint{

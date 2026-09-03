@@ -142,9 +142,13 @@ func New() (*App, error) {
 	a.Console.Printf("**************************************************************************")
 
 	// GONEX_BOOT skips the menus for development: "flight" starts a game,
-	// "entry <stellar>" starts a game and drops straight onto the corridor.
+	// "war" drops into the three-colour deathmatch, and "entry <stellar>"
+	// starts a game and goes straight onto the corridor.
 	if boot := os.Getenv("GONEX_BOOT"); boot == "load" {
 		a.loadGame() // straight into the last berth save
+		a.hideMenu()
+	} else if boot == "war" {
+		a.newGame("deathmatch.xml") // the three-colour supply war, for a look at it
 		a.hideMenu()
 	} else if boot != "" {
 		a.newGame("sundaydrive.xml")
