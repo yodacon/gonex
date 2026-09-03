@@ -210,16 +210,21 @@ func (a *App) enterSystem(sysID int) {
 }
 
 // nearbyStellar finds a dockable planet within landing range of the player.
+// A planet is dockable only if the gazetteer actually knows its stellar: a
+// scene is data, and a wrong ID in a map file must read as "nothing to dock
+// with", never as a nil Stellar dereferenced three call frames later.
 func (a *App) nearbyStellar() int {
 	p := a.World.MainPlayer
 	if p == nil {
 		return 0
 	}
 	for _, e := range a.World.Entities {
-		if pl, ok := e.(*world.Planet); ok && pl.StellarID > 0 {
-			if pl.Pos().Sub(p.Pos()).Len() < world.CollisionRange*4 {
-				return pl.StellarID
-			}
+		pl, ok := e.(*world.Planet)
+		if !ok || pl.StellarID <= 0 || a.gal.Stellars[pl.StellarID] == nil {
+			continue
+		}
+		if pl.Pos().Sub(p.Pos()).Len() < world.CollisionRange*4 {
+			return pl.StellarID
 		}
 	}
 	return 0

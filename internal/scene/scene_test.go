@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"yodacon.org/gonex/internal/ai"
+	"yodacon.org/gonex/internal/galaxy"
 	"yodacon.org/gonex/internal/market"
 	"yodacon.org/gonex/internal/ship"
 	"yodacon.org/gonex/internal/world"
@@ -74,6 +75,40 @@ func TestPlanetsCarryTheirTeamAndIndustry(t *testing.T) {
 	}
 	if byTeam[world.TeamNone] != 4 {
 		t.Errorf("%d neutral planets, want 4", byTeam[world.TeamNone])
+	}
+}
+
+// Every stellar a map names has to be one the gazetteer actually knows.
+// Getting this wrong is not a cosmetic error: the flight banner looks the
+// stellar up by ID the moment the player is in range of the planet, and a
+// map that cites a landing-picture ID instead of a stellar ID crashes the
+// game the instant you fly near your own capital.
+func TestSceneStellarsExistInTheGazetteer(t *testing.T) {
+	gal, err := galaxy.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := load(t, "deathmatch.xml")
+	named := 0
+	for _, e := range w.Entities {
+		p, ok := e.(*world.Planet)
+		if !ok || p.StellarID == 0 {
+			continue
+		}
+		named++
+		st := gal.Stellars[p.StellarID]
+		if st == nil {
+			t.Errorf("%s cites stellar %d, which is not in the gazetteer",
+				p.Label(), p.StellarID)
+			continue
+		}
+		if st.Name != p.Label() {
+			t.Errorf("%s cites stellar %d, which the gazetteer calls %q",
+				p.Label(), p.StellarID, st.Name)
+		}
+	}
+	if named != 3 {
+		t.Errorf("%d planets cite a stellar, want the 3 capitals", named)
 	}
 }
 

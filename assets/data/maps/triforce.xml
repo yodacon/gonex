@@ -2,20 +2,20 @@
 <scene>
   <map width="10000" height="10000" />
   <planets>
-    <planet xpos="1000" ypos="4500" sprite="1" team="1" name="Cenron" stellar="13514" />
-    <planet xpos="1500" ypos="4500" sprite="2" team="1" name="Cenron Yards" pop="900000" />
-    <planet xpos="1250" ypos="4750" sprite="3" team="1" name="Cenron Deep" pop="600000" />
-    <planet xpos="1250" ypos="4250" sprite="10" team="1" name="Cenron Reach" pop="400000" />
+    <planet xpos="1000" ypos="4500" sprite="1" team="1" name="ConEx" stellar="133" />
+    <planet xpos="1500" ypos="4500" sprite="2" team="1" name="ConEx Yards" pop="900000" />
+    <planet xpos="1250" ypos="4750" sprite="3" team="1" name="ConEx Deep" pop="600000" />
+    <planet xpos="1250" ypos="4250" sprite="10" team="1" name="ConEx Reach" pop="400000" />
 
-    <planet xpos="8000" ypos="1000" sprite="4" team="2" name="Exeon" stellar="13515" />
+    <planet xpos="8000" ypos="1000" sprite="4" team="2" name="Exeon" stellar="238" />
     <planet xpos="8500" ypos="1000" sprite="5" team="2" name="Exeon Yards" pop="900000" />
     <planet xpos="8250" ypos="1250" sprite="6" team="2" name="Exeon Deep" pop="600000" />
     <planet xpos="8250" ypos="750" sprite="11" team="2" name="Exeon Reach" pop="400000" />
 
-    <planet xpos="8000" ypos="8000" sprite="7" team="3" name="Tarsus" stellar="13516" />
-    <planet xpos="8500" ypos="8000" sprite="8" team="3" name="Tarsus Yards" pop="900000" />
-    <planet xpos="8250" ypos="8250" sprite="9" team="3" name="Tarsus Deep" pop="600000" />
-    <planet xpos="8250" ypos="7750" sprite="12" team="3" name="Tarsus Reach" pop="400000" />
+    <planet xpos="8000" ypos="8000" sprite="7" team="3" name="Cenron" stellar="235" />
+    <planet xpos="8500" ypos="8000" sprite="8" team="3" name="Cenron Yards" pop="900000" />
+    <planet xpos="8250" ypos="8250" sprite="9" team="3" name="Cenron Deep" pop="600000" />
+    <planet xpos="8250" ypos="7750" sprite="12" team="3" name="Cenron Reach" pop="400000" />
 
     <!-- contested ground: nobody's pad, and worth taking -->
     <planet xpos="5000" ypos="5000" sprite="14" team="0" name="Midpoint" />

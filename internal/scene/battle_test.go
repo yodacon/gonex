@@ -121,13 +121,23 @@ func TestAStarvedHoldingGroundsItsSquadron(t *testing.T) {
 		}
 	}
 
-	armed := 0
+	// A replacement hull still arrives with its starter quarter-magazine —
+	// that comes out of the yard, not the pad. What a bankrupt holding must
+	// not be able to do is put a round beyond that into anybody.
+	armed, deaths := 0, 0
 	for _, e := range w.Entities {
-		if s, ok := e.(*world.Ship); ok && s.Team == world.TeamRed && s.Rounds > 0 {
+		s, ok := e.(*world.Ship)
+		if !ok || s.Team != world.TeamRed {
+			continue
+		}
+		deaths += s.Deaths
+		if s.Rounds > s.RoundsMax/4 {
 			armed++
+			t.Errorf("%s carries %d/%d rounds off a holding with no capacity and no treasury",
+				s.Name, s.Rounds, s.RoundsMax)
 		}
 	}
-	if armed > 0 {
-		t.Errorf("%d Red pilots rearmed at a holding with no capacity and no treasury", armed)
+	if armed == 0 && deaths == 0 {
+		t.Log("note: no Red losses in this window, so no respawn magazines either")
 	}
 }
