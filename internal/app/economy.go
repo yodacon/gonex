@@ -87,6 +87,12 @@ func (a *App) seedUniverse() {
 	// places a ton can hide are exactly the two places a player can stand.
 	a.uni.Account(a.playerHold)
 	a.uni.Account(a.residentHolds)
+	// And the player's purse is a purse: everything paid at a counter or a
+	// pad lands in a treasury, and the ledger sees the player's money as one
+	// more place money can be.
+	a.uni.AccountCredits(a.playerPurse)
+	a.uni.ReopenLedger()
+	a.uni.OnConquer = a.onConquer
 	if a.World != nil {
 		a.World.OnKill = a.loseResident
 	}
@@ -119,6 +125,24 @@ func (a *App) residentHolds() econ.Stock {
 		}
 	}
 	return s
+}
+
+// onConquer moves the flag over a world standing in the sky when the
+// economy above it changes hands — Konquest's fall, drawn.
+func (a *App) onConquer(w *universe.World) {
+	if a.World == nil || w == nil {
+		return
+	}
+	for _, e := range a.World.Entities {
+		pl, ok := e.(*world.Planet)
+		if !ok || pl.StellarID != w.Stellar {
+			continue
+		}
+		pl.Team = teamOf(w.Govt)
+	}
+	if a.Console != nil {
+		a.Console.Notifyf("%s has fallen to %s.", w.Name, w.Govt.Name())
+	}
 }
 
 // hullsPerColour is the fixed census each power starts with. It is small on
@@ -175,7 +199,18 @@ func (a *App) registerEconomyCommands(c *console.Console) {
 		} else {
 			c.Printf("  books balance — every ton accounted for")
 		}
+		if bad := a.uni.AuditCredits(); bad != nil {
+			c.Printf("  LEDGER DOES NOT BALANCE: %v", bad)
+		} else {
+			c.Printf("  ledger balances — %d cr in circulation, every one in a purse", a.uni.MoneySupply())
+		}
+		for _, st := range a.uni.Standings() {
+			c.Printf("  %-5s %d worlds · pop %.1fM · %d hulls · treasuries %d cr · exchequer %d cr · capital rated %.2f",
+				st.Color, st.Worlds, float64(st.Pop)/1e6, st.Hulls, st.Treasury, st.Exchequer, st.Rating)
+		}
 	}, "economy", "econ", "trade")
+
+	a.registerGovernCommands(c)
 
 	c.Register(func(c *console.Console, _ string) {
 		for _, g := range govt.Colors() {

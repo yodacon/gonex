@@ -42,6 +42,25 @@ const (
 	Polymer
 	Grain
 
+	// The yard tier. What a fleet is made of, and the reason a high-
+	// population world with steel and chips on hand is dangerous: a hull's
+	// dry tonnage is Hull that left a warehouse, and a magazine is Rounds
+	// that a courier carried. Nothing here is abstract — a planet out of
+	// Rounds has Konquest's zero kill percentage, and can be taken by
+	// whoever arrives.
+	Hull
+	Rounds
+	Missiles
+
+	// The returns. Two sinks that are not graves: organic consumption
+	// lands in Compost, which a composter turns back into biomass on the
+	// surface, and a dead hull's structure lands in Scrap, which a
+	// breaker's yard turns back into steel. These are what make the
+	// economy a CYCLE rather than a drain — the only two places the flow
+	// goes back uphill.
+	Compost
+	Scrap
+
 	// The crust. This is the only tier mining can produce, and the only tier
 	// that is finite: there is a fixed tonnage of each in each world's rock
 	// at genesis and no process anywhere puts any back.
@@ -66,9 +85,11 @@ const (
 // tests assert all three against each other.
 const BoardWidth = 6
 
-// FirstCrust and FirstRefined mark the tier boundaries.
+// The tier boundaries.
 const (
 	FirstRefined = Steel
+	FirstYard    = Hull
+	FirstReturn  = Compost
 	FirstCrust   = Ferrite
 )
 
@@ -77,6 +98,8 @@ var names = [Count]string{
 	Medicine: "Medicine", Chips: "Chips", FuelCells: "Fuel cells",
 	Steel: "Steel", Copper: "Copper", Silicon: "Silicon",
 	Polymer: "Polymer", Grain: "Grain",
+	Hull: "Hull", Rounds: "Rounds", Missiles: "Missiles",
+	Compost: "Compost", Scrap: "Scrap",
 	Ferrite: "Ferrite", Cuprite: "Cuprite", Silicate: "Silicate",
 	Volatiles: "Volatiles", Biomass: "Biomass",
 	Slag: "Slag",
@@ -97,8 +120,30 @@ func (m Material) Tradeable() bool { return m >= 0 && m < BoardWidth }
 func (m Material) Crust() bool { return m >= FirstCrust && m <= Biomass }
 
 // Refined reports whether this is an intermediate — made from crust, and
-// consumed by a further stage rather than sold.
-func (m Material) Refined() bool { return m >= FirstRefined && m < FirstCrust }
+// consumed by a further stage rather than sold. Intermediates move by
+// in-system shuttle, never by interstellar courier: see universe.FindRoutes.
+func (m Material) Refined() bool { return m >= FirstRefined && m < FirstYard }
+
+// Yard reports whether this is fleet material: a hull, or what it shoots.
+func (m Material) Yard() bool { return m >= FirstYard && m < FirstReturn }
+
+// Return reports whether this is one of the two recycled sinks.
+func (m Material) Return() bool { return m >= FirstReturn && m < FirstCrust }
+
+// Organic reports whether eating this leaves compost rather than slag. It is
+// the rule that decides which half of consumption is renewable.
+func (m Material) Organic() bool {
+	switch m {
+	case Rations, Medicine, Lumber, Grain, Biomass:
+		return true
+	}
+	return false
+}
+
+// Finished reports whether a spaceport population would buy this for its
+// own use: the board goods plus munitions for the garrison. Intermediates
+// and returns are not finished; a fabricator wants copper, nobody eats it.
+func (m Material) Finished() bool { return m.Tradeable() || m == Rounds || m == Missiles }
 
 // Crusts lists the minable materials, in order. Seeding walks this.
 func Crusts() []Material {
@@ -206,4 +251,29 @@ func (s Stock) String() string {
 		return "empty"
 	}
 	return out
+}
+
+// Parse reads a material by name, case-insensitively, for the console and
+// the desk. "fuel" and "cells" both find Fuel cells.
+func Parse(s string) (Material, bool) {
+	fold := func(x string) string {
+		b := []byte(x)
+		for i, c := range b {
+			if c >= 'A' && c <= 'Z' {
+				b[i] = c + 'a' - 'A'
+			}
+		}
+		return string(b)
+	}
+	q := fold(s)
+	for m := Material(0); m < Count; m++ {
+		if fold(names[m]) == q {
+			return m, true
+		}
+	}
+	switch q {
+	case "fuel", "cells", "fuelcells":
+		return FuelCells, true
+	}
+	return 0, false
 }

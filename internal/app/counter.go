@@ -83,7 +83,7 @@ func (a *App) buyTons(stellar, commodity, want int) int {
 				break
 			}
 		}
-		v.Credits -= price
+		a.payPort(stellar, price) // into the treasury, not into the void
 		v.Cargo[commodity]++
 		got++
 	}
@@ -104,8 +104,17 @@ func (a *App) sellTons(stellar, commodity, want int) int {
 	price := a.shopPrice(stellar, commodity)
 	got := 0
 	for got < want && v.Cargo[commodity] > 0 {
+		// The port pays out of its treasury. A world that cannot cover the
+		// next ton stops buying — which is a real event with a real cause,
+		// and the reason a governor watches the TREASURY tank.
+		if uw := a.uniWorld(stellar); uw != nil && uw.Credits < price {
+			if a.Console != nil && got == 0 {
+				a.Console.Notifyf("%s's treasury cannot cover another ton.", uw.Name)
+			}
+			break
+		}
 		v.Cargo[commodity]--
-		v.Credits += price
+		a.portPays(stellar, price)
 		if uw := a.uniWorld(stellar); uw != nil {
 			uw.Warehouse.Add(econ.Material(commodity), 1)
 		}
@@ -161,6 +170,10 @@ func (a *App) syncPlanetStock() {
 		for i := 0; i < world.CommodityCount && i < len(pl.Stock); i++ {
 			pl.Stock[i] = int(uw.Warehouse[econ.Material(i)])
 		}
+		// The arsenal, the treasury and the flag are the economy's too.
+		pl.Munitions, pl.TrackedMunitions = uw.Warehouse[econ.Rounds], true
+		pl.Credits = uw.Credits
+		pl.Team = teamOf(uw.Govt)
 	}
 }
 
@@ -174,16 +187,20 @@ func (a *App) drainPlanetStock() {
 	}
 	for _, e := range a.World.Entities {
 		pl, ok := e.(*world.Planet)
-		if !ok || pl.StellarID <= 0 || pl.PlateDraw <= 0 {
+		if !ok || pl.StellarID <= 0 || (pl.PlateDraw <= 0 && pl.RoundsDraw <= 0) {
 			continue
 		}
 		uw := a.uni.Worlds[pl.StellarID]
 		if uw == nil {
-			pl.PlateDraw = 0
+			pl.PlateDraw, pl.RoundsDraw = 0, 0
 			continue
 		}
 		econ.Consume(&uw.Warehouse, &a.uni.Sink, econ.Ore, pl.PlateDraw)
-		pl.PlateDraw = 0
+		// Rounds handed to a magazine are tons off the shelf. They are
+		// counted as consumed at the pad — a magazine is not a pool the
+		// auditor reads — which is the same rule the player's armoury uses.
+		econ.Consume(&uw.Warehouse, &a.uni.Sink, econ.Rounds, pl.RoundsDraw)
+		pl.PlateDraw, pl.RoundsDraw = 0, 0
 	}
 }
 

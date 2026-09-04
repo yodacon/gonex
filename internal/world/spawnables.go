@@ -159,6 +159,15 @@ type Planet struct {
 	// above it, and must not have to.
 	PlateDraw float64
 
+	// The arsenal. Munitions is tons of Rounds on the shelf, mirrored from
+	// the economy's warehouse when TrackedMunitions is set; RoundsDraw is
+	// what the pad has handed out since the last collection, in tons, for
+	// the economy to debit. Untracked planets — a scene with no universe
+	// over it — arm from capacity alone, as they always did.
+	Munitions        float64
+	RoundsDraw       float64
+	TrackedMunitions bool
+
 	// Rally is the AI's muster slot for this port: whatever flight is forming
 	// up here. The simulation never looks inside it — it is stored here only
 	// because the port is the obvious rendezvous, and hanging it off the

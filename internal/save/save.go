@@ -39,6 +39,11 @@ type PilotState struct {
 	PlayerShipID         int
 	DockStellar          int   // >0: saved on the pad at this stellar
 	Seed                 int64 `json:",omitempty"` // the universe seed
+	// Universe is the economy's own snapshot — what the seed does not
+	// determine: worlds taken, buildings bought, wrecks adrift, purses. An
+	// older berth without it reseeds from scratch, which is what it always
+	// did.
+	Universe json.RawMessage `json:",omitempty"`
 }
 
 // Exists reports whether a save is on disk at path.

@@ -43,6 +43,10 @@ const (
 	// pressed from it, which is the one place the trade economy's warehouse
 	// reaches into the war economy's pad.
 	OreIndex = 1
+	// RoundTons is the mass of one round: ten kilograms of jacket and
+	// charge, a hundred to the ton. A magazine is cargo, and a pad that
+	// rearms a squadron is emptying an arsenal by the ton.
+	RoundTons = 0.01
 	// platePerHull is tons of ore per point of hull repaired.
 	platePerHull = 0.35
 
@@ -126,10 +130,22 @@ func (p *Planet) serve(s *Ship) Service {
 	}
 
 	if want := float64(s.RoundsMax - s.Rounds); want > 0 {
+		// Rounds are tons before they are bullets. When the economy above
+		// is keeping this world's arsenal, the pad can hand out no more
+		// than is actually on the shelf — a world whose Rounds have been
+		// hauled away, or shot away, sends its squadron out dry however
+		// much capacity and credit it has.
+		if p.TrackedMunitions {
+			want = math.Min(want, math.Floor(p.Munitions/RoundTons))
+		}
 		got := int(p.spend(want, RoundCr, roundIP))
 		s.Rounds += got
 		svc.Rounds = got
-		if float64(got) < want {
+		if p.TrackedMunitions {
+			p.Munitions -= float64(got) * RoundTons
+			p.RoundsDraw += float64(got) * RoundTons
+		}
+		if float64(got) < want || (p.TrackedMunitions && s.Rounds < s.RoundsMax) {
 			svc.Refused = "rounds"
 		}
 	}
@@ -242,7 +258,12 @@ func (p *Planet) IPMax() float64 { return 2 * float64(p.Pop) / PopPerIP }
 func (p *Planet) Berths() int { return 1 + p.Pop/2000000 }
 
 // Starving reports a planet that can no longer arm the ships it launches.
-func (p *Planet) Starving() bool { return p.IP < roundIP*20 || p.Credits < RoundCr*20 }
+func (p *Planet) Starving() bool {
+	if p.TrackedMunitions && p.Munitions < RoundTons*20 {
+		return true
+	}
+	return p.IP < roundIP*20 || p.Credits < RoundCr*20
+}
 
 // Label names a planet for the console.
 func (p *Planet) Label() string {

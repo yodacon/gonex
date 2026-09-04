@@ -357,7 +357,18 @@ func TestExternallyHeldMassIsAudited(t *testing.T) {
 	// decorative: forgetting to account for a hold IS losing track of it.
 	stray := u.Worlds[134]
 	var hidden econ.Stock
-	econ.Transfer(&stray.Warehouse, &hidden, econ.Ore, 25)
+	// Whatever the warehouse actually holds most of — a fixture that names a
+	// material is a fixture that breaks when the industry table changes.
+	most := econ.Ferrite
+	for m := econ.Material(0); m < econ.Count; m++ {
+		if stray.Warehouse[m] > stray.Warehouse[most] {
+			most = m
+		}
+	}
+	if stray.Warehouse[most] < 25 {
+		t.Fatalf("world 134 holds under 25 t of anything; nothing to leak")
+	}
+	econ.Transfer(&stray.Warehouse, &hidden, most, 25)
 	if bad := u.Audit(); len(bad) == 0 {
 		t.Error("moving 25 t into an unaccounted pool did not register as a leak")
 	}

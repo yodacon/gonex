@@ -4,6 +4,7 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/color"
@@ -197,6 +198,9 @@ func New() (*App, error) {
 				if strings.HasSuffix(boot, " bar") {
 					a.dock.view = dockBar
 					a.dock.rollMissions(a)
+				} else if strings.HasSuffix(boot, " govern") {
+					a.dock.view = dockGovern
+					a.openGovern()
 				} else if strings.HasSuffix(boot, " missions") {
 					a.dock.view = dockMissions
 					a.dock.rollMissions(a)
@@ -296,6 +300,14 @@ func (a *App) saveGame() {
 	var pilot *save.PilotState
 	if a.voy != nil {
 		pilot = a.voy.pilotState(a.Cfg.PlayerShipID, dockStellar)
+		if a.uni != nil {
+			a.releaseResidents() // a hull is in exactly one place; on disk, that is the census
+			a.stepUniverse()
+			if raw, err := json.Marshal(a.uni.Snapshot()); err == nil {
+				pilot.Universe = raw
+			}
+			a.residentsIn(a.voy.System)
+		}
 	}
 	if err := save.Write(a.World, pilot, save.DefaultPath); err != nil {
 		a.Console.Printf("- Save failed: %v", err)
@@ -325,6 +337,16 @@ func (a *App) loadGame() {
 	a.wireGrid()
 	a.enterSystem(a.voy.System)
 	a.seedUniverse()
+	if pilot != nil && len(pilot.Universe) > 0 && a.uni != nil {
+		var snap universe.Snapshot
+		if err := json.Unmarshal(pilot.Universe, &snap); err == nil && snap.Seed == a.uni.Seed {
+			a.releaseResidents()
+			a.uni.Restore(&snap)
+			a.uniDay = a.uni.Day
+			a.syncPlanetStock()
+			a.residentsIn(a.voy.System)
+		}
+	}
 	a.stepUniverse()
 	a.setGameStatus(true)
 	if pilot != nil && pilot.DockStellar > 0 {

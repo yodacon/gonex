@@ -230,3 +230,18 @@ func Describe(c Color) string {
 		Trait(c, Shields), Trait(c, Gunnery), Trait(c, Logistics),
 		MinFleet(c))
 }
+
+// Parse reads a colour by name or polity, case-insensitively.
+func Parse(s string) (Color, bool) {
+	switch s {
+	case "red", "Red", "RED", "ConEx", "conex":
+		return Red, true
+	case "green", "Green", "GREEN", "Exeon", "exeon":
+		return Green, true
+	case "blue", "Blue", "BLUE", "Cenron", "cenron":
+		return Blue, true
+	case "neutral", "Neutral", "none", "None":
+		return None, true
+	}
+	return None, false
+}

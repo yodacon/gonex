@@ -44,7 +44,7 @@ func (a *App) newTraderGame() {
 	if !a.running() {
 		return
 	}
-	a.voy.Credits = 8000 // a trader starts on margin, not on savings
+	a.stake(8000) // a trader starts on margin, not on savings — and the margin is the home world's
 	a.Console.Notifyf("TRADER — the board is at every port (T when docked).")
 	a.Console.Notifyf("Buy low, haul, sell high. The news moves the prices.")
 	a.Console.Notifyf("The lanes are armed: Tab maps the fight, M charts the way OUT of it, J jumps.")

@@ -103,10 +103,46 @@ type Hull struct {
 	// and therefore slower, with no special case anywhere.
 	Cargo econ.Stock
 
+	// Purse is the pilot's own money. Loading debits it, delivery credits
+	// it, and a pilot who cannot afford the parcel does not load — a
+	// colour's courier fleet is a set of small businesses with a visible
+	// net worth, not a conveyor belt. Registered with the credit ledger.
+	Purse int
+
+	// Mission is why the hull is on its lane. A courier is trading; a
+	// flight is under a standing order — a garrison transfer if the far end
+	// is friendly, an assault if it is not. The rules of arrival differ,
+	// nothing else does: a flight is a hull like any other, with its
+	// magazine in its cargo.
+	Mission Mission
+
 	// Ledger figures, for the journal and the trade report.
 	Bought  int // credits spent on this run's cargo
 	Voyages int
 	Tons    float64 // lifetime tons delivered
+}
+
+// Mission is what a hull was sent to do.
+type Mission int
+
+const (
+	// Courier: free trade, routed by what pays today.
+	Courier Mission = iota
+	// Convoy: a standing order to carry a named material A → B.
+	Convoy
+	// Flight: a standing order to move hulls A → B. Arriving at a hostile
+	// world, it fights; at a friendly one, it berths as garrison.
+	Flight
+)
+
+func (m Mission) String() string {
+	switch m {
+	case Convoy:
+		return "convoy"
+	case Flight:
+		return "flight"
+	}
+	return "courier"
 }
 
 // Laden is the cargo tonnage aboard.
@@ -114,6 +150,29 @@ func (h *Hull) Laden() float64 { return h.Cargo.Total() }
 
 // Wet is the hull's current mass: structure plus what it is carrying.
 func (h *Hull) Wet() float64 { return h.Dry + h.Laden() }
+
+// Capacity is the hold in tons. Half the dry mass, scaled by the colour's
+// logistics — the one place that number is computed, so the dispatcher, the
+// salvage scoop and the desk all agree on how much a hull can lift.
+func (h *Hull) Capacity() float64 { return h.Dry / 2 * govt.HoldFactor(h.Govt) }
+
+// Free is the hold space left.
+func (h *Hull) Free() float64 { return math.Max(h.Capacity()-h.Laden(), 0) }
+
+// Magazine is the rounds aboard, in tons. A flight's kill percentage is made
+// of this — it is Konquest's "the attacker uses the kill percent of the
+// planet it left", because this is what it loaded there.
+func (h *Hull) Magazine() float64 { return h.Cargo[econ.Rounds] }
+
+// Structure is the hull's own mass as a material vector: the pool the
+// auditor counts it in. A hull is Hull tons that left a warehouse.
+func (h *Hull) Structure() econ.Stock {
+	var s econ.Stock
+	if h.Status != Lost {
+		s[econ.Hull] = h.Dry
+	}
+	return s
+}
 
 // Lane is a link between two stellars, with a length. Hulls fly along it.
 type Lane struct {
@@ -175,6 +234,24 @@ func (j *Journal) Tail(n int) []Entry {
 // Len is how many entries are being kept.
 func (j *Journal) Len() int { return len(j.entries) }
 
+// --- Debris --------------------------------------------------------------
+
+// Debris is what a dead hull leaves: its cargo, and its structure as Scrap,
+// sitting where it died. It is a pile, not a pickup — it does not expire,
+// it is on the books, and it belongs to whoever gets a hold under it. On a
+// lane it sits at a distance S along the link; at a port (S < 0, Lane
+// unset) it is in orbit, and idle hulls berthed there scoop it.
+type Debris struct {
+	From, To int     // the lane, if any
+	At       int     // the stellar it is in orbit over, if not on a lane
+	S        float64 // Mm along the lane; -1 in orbit
+	Stock    econ.Stock
+	Day      int // when it was made, for the journal
+}
+
+// InOrbit reports whether the pile sits at a port rather than on a lane.
+func (d *Debris) InOrbit() bool { return d.S < 0 }
+
 // --- The registry --------------------------------------------------------
 
 // Registry is the universal ship census.
@@ -182,6 +259,10 @@ type Registry struct {
 	Hulls   []*Hull
 	Lanes   map[[2]int]*Lane
 	Journal *Journal
+
+	// Debris is every wreck field in the universe. Nothing removes an
+	// entry except a hold lifting the last ton out of it.
+	Debris []*Debris
 
 	// Name renders a stellar ID as the port's name for the journal. The
 	// registry knows hulls and lanes, not the gazetteer, so whoever owns the
@@ -267,6 +348,187 @@ func (r *Registry) CargoAfloat() econ.Stock {
 	return s
 }
 
+// Structure is the dry tonnage of every surviving hull, as Hull material.
+// Fleet mass is on the books: build a hull and a warehouse gets lighter by
+// exactly what the ship weighs; lose one and the tons are Scrap in a field.
+func (r *Registry) Structure() econ.Stock {
+	var s econ.Stock
+	for _, h := range r.Hulls {
+		s = s.Plus(h.Structure())
+	}
+	return s
+}
+
+// DebrisAfloat is every ton sitting in a wreck field anywhere.
+func (r *Registry) DebrisAfloat() econ.Stock {
+	var s econ.Stock
+	for _, d := range r.Debris {
+		s = s.Plus(d.Stock)
+	}
+	return s
+}
+
+// Drop makes a wreck field from a pool, where the hull was. It merges into a
+// field already at that spot rather than making a second, so a battle over
+// one port leaves one pile.
+func (r *Registry) Drop(h *Hull, pool *econ.Stock, day int) *Debris {
+	var d *Debris
+	if h.Status.UnderWay() {
+		d = r.debrisAt(h.From, h.To, h.S)
+		if d == nil {
+			d = &Debris{From: h.From, To: h.To, S: h.S, Day: day}
+			r.Debris = append(r.Debris, d)
+		}
+	} else {
+		d = r.debrisAt(0, 0, -1)
+		for _, o := range r.Debris {
+			if o.InOrbit() && o.At == h.Home {
+				d = o
+				break
+			}
+		}
+		if d == nil {
+			d = &Debris{At: h.Home, S: -1, Day: day}
+			r.Debris = append(r.Debris, d)
+		}
+	}
+	for m := econ.Material(0); m < econ.Count; m++ {
+		if pool[m] > 0 {
+			econ.Transfer(pool, &d.Stock, m, pool[m])
+		}
+	}
+	return d
+}
+
+func (r *Registry) debrisAt(from, to int, s float64) *Debris {
+	if s < 0 {
+		return nil
+	}
+	for _, d := range r.Debris {
+		if d.InOrbit() {
+			continue
+		}
+		same := (d.From == from && d.To == to) || (d.From == to && d.To == from)
+		if same && math.Abs(d.S-s) < scoopReach {
+			return d
+		}
+	}
+	return nil
+}
+
+// Scoop lets a hull lift what it can from a field: every material, up to
+// the hold space it has left. Returns the tons taken. The field is struck
+// from the register once it is empty, and only then.
+func (r *Registry) Scoop(h *Hull, d *Debris, day int) float64 {
+	free := h.Free()
+	if free <= 0 || d.Stock.Total() <= 0 {
+		return 0
+	}
+	var got float64
+	for m := econ.Material(0); m < econ.Count && free > 0; m++ {
+		if d.Stock[m] <= 0 {
+			continue
+		}
+		t := econ.Transfer(&d.Stock, &h.Cargo, m, math.Min(d.Stock[m], free))
+		free -= t
+		got += t
+	}
+	if got > 0 {
+		h.Mass = h.Wet()
+		r.Journal.Logf(day, h.ID, "%s scoops %.0ft of wreckage", h.Name, got)
+	}
+	r.sweep()
+	return got
+}
+
+// Salvage runs the collection rule over a whole field: the NEAREST hull
+// with hold space takes what it can, then the next nearest, until the field
+// is empty or nobody nearby has room. Whatever is left stays where it is.
+// Any colour may lift; a wreck is nobody's.
+func (r *Registry) Salvage(d *Debris, day int) {
+	type cand struct {
+		h *Hull
+		d float64
+	}
+	var near []cand
+	for _, h := range r.Hulls {
+		if h.Status == Lost || h.Status == Resident || h.Free() <= 0 {
+			continue
+		}
+		switch {
+		case d.InOrbit():
+			if !h.Status.UnderWay() && h.Home == d.At {
+				near = append(near, cand{h, 0})
+			}
+		case h.Status.UnderWay():
+			same := (h.From == d.From && h.To == d.To)
+			rev := (h.From == d.To && h.To == d.From)
+			if !same && !rev {
+				continue
+			}
+			pos := h.S
+			if rev {
+				pos = r.Lane(d.From, d.To).Length - h.S
+			}
+			if dist := math.Abs(pos - d.S); dist <= salvageRange {
+				near = append(near, cand{h, dist})
+			}
+		}
+	}
+	sort.SliceStable(near, func(i, j int) bool {
+		if near[i].d != near[j].d {
+			return near[i].d < near[j].d
+		}
+		return near[i].h.ID < near[j].h.ID
+	})
+	for _, c := range near {
+		if d.Stock.Total() <= 0 {
+			break
+		}
+		r.Scoop(c.h, d, day)
+	}
+}
+
+// sweep drops empty fields from the register.
+func (r *Registry) sweep() {
+	live := r.Debris[:0]
+	for _, d := range r.Debris {
+		if d.Stock.Total() > 1e-9 {
+			live = append(live, d)
+		}
+	}
+	r.Debris = live
+}
+
+// DebrisNear lists the fields a hull is passing or berthed beside.
+func (r *Registry) DebrisNear(h *Hull) []*Debris {
+	var out []*Debris
+	for _, d := range r.Debris {
+		if d.InOrbit() {
+			if !h.Status.UnderWay() && h.Home == d.At {
+				out = append(out, d)
+			}
+			continue
+		}
+		if !h.Status.UnderWay() {
+			continue
+		}
+		same := (h.From == d.From && h.To == d.To)
+		rev := (h.From == d.To && h.To == d.From)
+		if !same && !rev {
+			continue
+		}
+		pos := h.S
+		if rev {
+			pos = r.Lane(d.From, d.To).Length - h.S
+		}
+		if math.Abs(pos-d.S) <= scoopReach {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
 // ByGovt lists a colour's surviving hulls.
 func (r *Registry) ByGovt(c govt.Color) []*Hull {
 	var out []*Hull
@@ -298,6 +560,15 @@ const (
 
 	// arrival is how close to the far end counts as arrived.
 	arrival = 0.5
+
+	// scoopReach is how close a passing hull must be to a wreck field to
+	// take from it — about a day's cruise, since the integrator steps a
+	// day at a time and a field must not be skipped over between steps.
+	scoopReach = 48.0
+
+	// salvageRange is how far along a lane the collection rule looks when a
+	// hull dies: the nearest hulls with room take the cargo, then the next.
+	salvageRange = 400.0
 )
 
 // Step advances one hull along its lane by dt days, integrating momentum.
@@ -322,6 +593,14 @@ func (r *Registry) Step(h *Hull, dt float64) (arrived bool) {
 		h.V = 0
 	}
 	h.S += h.V * dt
+
+	// A hull passing a wreck field with room in the hold takes what it can.
+	// Any colour: a wreck is nobody's.
+	if h.Free() > 0 {
+		for _, d := range r.DebrisNear(h) {
+			r.Scoop(h, d, -1)
+		}
+	}
 
 	if h.S >= lane.Length-arrival {
 		h.S = lane.Length
@@ -384,8 +663,8 @@ func (h *Hull) Manifest(eta float64) string {
 	case h.Status == Lost:
 		return fmt.Sprintf("%-12s %-5s LOST", h.Name, h.Govt)
 	case h.Status.UnderWay():
-		return fmt.Sprintf("%-12s %-5s %-9s %d→%d  %5.0ft  eta %4.1fd  %5.1f Mm/d",
-			h.Name, h.Govt, h.Status, h.From, h.To, h.Laden(), eta, h.V)
+		return fmt.Sprintf("%-12s %-5s %-9s %d→%d  %5.0ft  eta %4.1fd  %5.1f Mm/d  %s",
+			h.Name, h.Govt, h.Status, h.From, h.To, h.Laden(), eta, h.V, h.Mission)
 	default:
 		return fmt.Sprintf("%-12s %-5s %-9s at %d   %5.0ft",
 			h.Name, h.Govt, h.Status, h.Home, h.Laden())
@@ -394,8 +673,8 @@ func (h *Hull) Manifest(eta float64) string {
 
 // Report renders the whole census as a short block, busiest colour first.
 func (r *Registry) Report() []string {
-	out := []string{fmt.Sprintf("%d hulls in the universe, %d afloat, %.0ft in transit",
-		len(r.Hulls), r.Afloat(), r.CargoAfloat().Total())}
+	out := []string{fmt.Sprintf("%d hulls in the universe, %d afloat, %.0ft in transit, %.0ft in %d wreck fields",
+		len(r.Hulls), r.Afloat(), r.CargoAfloat().Total(), r.DebrisAfloat().Total(), len(r.Debris))}
 	c := r.Census()
 	out = append(out, fmt.Sprintf("  idle %d · loading %d · hauling %d · returning %d · fighting %d · in sector %d · lost %d",
 		c[Idle], c[Loading], c[Hauling], c[Returning], c[Fighting], c[Resident], c[Lost]))

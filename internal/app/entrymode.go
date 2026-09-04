@@ -718,15 +718,15 @@ func (a *App) finishEntry() {
 	switch s.Status() {
 	case reentry.Landed:
 		sc := s.Score()
-		a.voy.Credits += sc.PadBonus
-		if sc.PadBonus > 0 {
-			a.Console.Notifyf("Pad bonus: %d cr (%.1f km off the line)", sc.PadBonus, sc.CrossKm)
+		// The port pays the bonus and collects the fine: both are movements
+		// on the ledger, out of and into the treasury of the world you
+		// landed on, not appearances from the sky.
+		if got := a.portPays(e.stellar, sc.PadBonus); got > 0 {
+			a.Console.Notifyf("Pad bonus: %d cr (%.1f km off the line)", got, sc.CrossKm)
 		}
 		if e.boomFine > 0 {
-			a.voy.Credits -= e.boomFine
-			if a.voy.Credits < 0 {
-				a.voy.Credits = 0
-			}
+			fine := min(e.boomFine, a.voy.Credits)
+			a.payPort(e.stellar, fine)
 			a.Console.Notifyf("NOISE-ABATEMENT FINE: %d cr — your supersonic profile exploded windows across the port.",
 				e.boomFine)
 		}

@@ -36,6 +36,21 @@ const (
 	CellPlant // polymer + copper → fuel cells
 	Crusher   // ferrite          → ore (bulk, sold as dug)
 
+	// The yard tier: what a fleet is made of. These are what a high-
+	// population world with steel and chips on hand turns into ships, and
+	// they are the reason a supply line matters — a world that cannot make
+	// Rounds needs them delivered, or its garrison fights dry.
+	Yard         // steel + chips + fuel cells → hull
+	Arsenal      // steel + polymer            → rounds
+	MissileWorks // steel + chips + polymer    → missiles
+
+	// The returns: the two processes that send the flow back uphill. A
+	// composter is on every inhabited world (a city recycles); a breaker's
+	// yard is on every port (a wreck landed is steel next week). Neither
+	// is a chain a world CHOOSES — they are civic, see universe.World.Civic.
+	Composter // compost → biomass, on the surface
+	Breaker   // scrap   → steel
+
 	KindCount
 )
 
@@ -47,6 +62,8 @@ var kindNames = [KindCount]string{
 	Cracker: "Cracker", Thresher: "Thresher",
 	Mill: "Mill", Cannery: "Cannery", Pharma: "Pharma works",
 	Fab: "Fabricator", CellPlant: "Cell plant", Crusher: "Ore crusher",
+	Yard: "Yard", Arsenal: "Arsenal", MissileWorks: "Missile works",
+	Composter: "Composter", Breaker: "Breaker's yard",
 }
 
 func (k Kind) String() string {
@@ -110,6 +127,22 @@ var recipes = [KindCount]recipe{
 	Fab:       {in: []Port{{econ.Silicon, 0.5}, {econ.Copper, 0.5}}, out: []Port{{econ.Chips, 0.45}}},
 	CellPlant: {in: []Port{{econ.Polymer, 0.6}, {econ.Copper, 0.4}}, out: []Port{{econ.FuelCells, 0.65}}},
 	Crusher:   {in: []Port{{econ.Ferrite, 1}}, out: []Port{{econ.Ore, 0.92}}},
+
+	// The yard tier. A hull is mostly steel with electronics and a power
+	// plant; a round is a steel jacket around a polymer charge; a missile
+	// is a little of everything. Every one of these takes N tons and hands
+	// back N tons of product and waste, like every recipe above.
+	Yard:         {in: []Port{{econ.Steel, 0.7}, {econ.Chips, 0.2}, {econ.FuelCells, 0.1}}, out: []Port{{econ.Hull, 0.90}}},
+	Arsenal:      {in: []Port{{econ.Steel, 0.6}, {econ.Polymer, 0.4}}, out: []Port{{econ.Rounds, 0.90}}},
+	MissileWorks: {in: []Port{{econ.Steel, 0.5}, {econ.Chips, 0.2}, {econ.Polymer, 0.3}}, out: []Port{{econ.Missiles, 0.85}}},
+
+	// The returns. Compost goes back to biomass ON THE SURFACE — into the
+	// warehouse, never the reserve, because a crust reserve only ever
+	// falls and the tests hold it to that. Scrap goes back to steel at a
+	// breaker's yard, which is how winning a battle becomes a mining
+	// operation: the loser's hulls are next week's plate.
+	Composter: {in: []Port{{econ.Compost, 1}}, out: []Port{{econ.Biomass, 0.60}}},
+	Breaker:   {in: []Port{{econ.Scrap, 1}}, out: []Port{{econ.Steel, 0.75}}},
 }
 
 // Build makes one primitive at the given daily throughput, with the owning
@@ -160,6 +193,39 @@ var Chains = []Chain{
 	{"Powercell", []Kind{WellVolatiles, Cracker, CellPlant}, econ.FuelCells},
 	{"Structural steel", []Kind{MineFerrite, Smelter}, econ.Steel},
 	{"Conductor", []Kind{MineCuprite, Refinery}, econ.Copper},
+
+	// The yard chains. Each stands on a ferrite seam and BUYS the rest —
+	// chips, fuel cells, polymer — which is what turns a shipyard world
+	// into the busiest port on the map: it is short of something every
+	// day, and the couriers know it.
+	{"Shipyard", []Kind{MineFerrite, Smelter, Yard}, econ.Hull},
+	{"Munitions", []Kind{MineFerrite, Smelter, Arsenal}, econ.Rounds},
+	{"Ordnance", []Kind{MineFerrite, Smelter, MissileWorks}, econ.Missiles},
+}
+
+// Civic builds the two return-path modules every inhabited world runs
+// regardless of what it chose to make, sized to the tonnage the world can
+// expect to recycle per day. They are kept apart from Chains because they
+// are not a speciality — nobody is "a composting world" — and because
+// Makes/Wants must not see them, or every port would appear to produce
+// steel and the steel trade would lose its direction.
+func Civic(gardenPerDay, compostPerDay, scrapPerDay float64, c govt.Color) []*Module {
+	var out []*Module
+	if gardenPerDay > 0 {
+		// Subsistence: every inhabited world grows SOME of its own food out
+		// of whatever biomass it can dig. Imports decide whether it grows;
+		// the gardens decide whether it starves. A barren rock has no
+		// gardens and lives or dies by the lane.
+		g := Compose("Gardens", Build(Thresher, gardenPerDay, c), Build(Cannery, gardenPerDay, c))
+		out = append(out, g)
+	}
+	if compostPerDay > 0 {
+		out = append(out, Build(Composter, compostPerDay, c))
+	}
+	if scrapPerDay > 0 {
+		out = append(out, Build(Breaker, scrapPerDay, c))
+	}
+	return out
 }
 
 // Processing is the chain's steps with the extractors removed.

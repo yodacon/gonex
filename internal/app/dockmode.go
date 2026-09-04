@@ -37,6 +37,7 @@ const (
 	dockOutfit
 	dockYard
 	dockJournal
+	dockGovern
 )
 
 type dockState struct {
@@ -47,6 +48,7 @@ type dockState struct {
 	rolled   bool
 	yardSel  int
 	tradeSel int // cursor on the commodity board
+	gov      governState
 }
 
 const (
@@ -132,20 +134,7 @@ func (a *App) drawMissionChart(screen *ebiten.Image, curSys, destSys int,
 	}
 	ui.DrawText(screen, "MISSION ANALYSIS", x0+8, y0+5, 0.7)
 
-	minX, minY := math.MaxFloat64, math.MaxFloat64
-	maxX, maxY := -math.MaxFloat64, -math.MaxFloat64
-	for _, s := range a.gal.Systems {
-		minX, maxX = math.Min(minX, float64(s.X)), math.Max(maxX, float64(s.X))
-		minY, maxY = math.Min(minY, float64(s.Y)), math.Max(maxY, float64(s.Y))
-	}
-	px := func(id int) (float32, float32, bool) {
-		s := a.gal.Systems[id]
-		if s == nil || maxX <= minX || maxY <= minY {
-			return 0, 0, false
-		}
-		return float32(x0 + 16 + (float64(s.X)-minX)/(maxX-minX)*(w-32)),
-			float32(y0 + 26 + (float64(s.Y)-minY)/(maxY-minY)*(h-46)), true
-	}
+	px := a.chartProjector(x0, y0, w, h)
 
 	// hop distances from here, one BFS — names go only on the near sky
 	dist := map[int]int{curSys: 0}
@@ -321,7 +310,7 @@ func (a *App) updateDock() {
 				a.Console.Notifyf("The %s pilot wants %d cr up front.",
 					a.Catalog.Get(esc).Name, hirePrice)
 			default:
-				v.Credits -= hirePrice
+				a.payPort(d.stellar, hirePrice)
 				v.Escorts = append(v.Escorts, esc)
 				a.Console.Notifyf("Hired a %s escort — %d cr/day on the payroll.",
 					a.Catalog.Get(esc).Name, escortWage)
@@ -333,8 +322,7 @@ func (a *App) updateDock() {
 				v.Escorts = v.Escorts[:n-1]
 			}
 		case inpututil.IsKeyJustPressed(ebiten.KeyC):
-			if v.Credits >= crewHire {
-				v.Credits -= crewHire
+			if a.payPort(d.stellar, crewHire) {
 				v.Crew++
 				a.Console.Notifyf("Signed a deckhand — crew %d, %d cr/day each.",
 					v.Crew, crewWage)
@@ -392,6 +380,8 @@ func (a *App) updateDock() {
 		if inpututil.IsKeyJustPressed(ebiten.KeyJ) || inpututil.IsKeyJustPressed(ebiten.KeyM) {
 			d.view = dockMain
 		}
+	case dockGovern:
+		a.updateGovern()
 	case dockOutfit:
 		// the stated goal of getting rich is really the goal of building a
 		// grid that survives richer contracts — but every tonne bought here
@@ -403,7 +393,7 @@ func (a *App) updateDock() {
 				case v.Credits < o.Price:
 					a.Console.Notifyf("Not enough credits for the %s.", o.Name)
 				default:
-					v.Credits -= o.Price
+					a.payPort(d.stellar, o.Price)
 					v.Grid.Buy(o)
 					a.Console.Notifyf("Fitted: %s (+%.0f t). Entries just got hotter — mind the corridor.",
 						o.Name, o.Kg/1000)
@@ -433,7 +423,11 @@ func (a *App) updateDock() {
 				a.Console.Notifyf("The %s runs %d cr after trade-in — you're short.",
 					a.Catalog.Get(id).Name, cost)
 			default:
-				v.Credits -= cost
+				if cost >= 0 {
+					a.payPort(d.stellar, cost)
+				} else {
+					a.portPays(d.stellar, -cost)
+				}
 				a.Cfg.PlayerShipID = id
 				if p := a.World.MainPlayer; p != nil {
 					p.ShipID = id
@@ -463,25 +457,22 @@ func (a *App) updateDock() {
 		case ebiten.IsKeyPressed(ebiten.KeyR):
 			// hold to refuel: the meters walk — jump fuel, lithium seed,
 			// then the RCS bottles
-			if v.Fuel < v.FuelMax && v.Credits >= fuelPrice {
+			if v.Fuel < v.FuelMax && a.payPort(d.stellar, fuelPrice) {
 				v.Fuel++
-				v.Credits -= fuelPrice
-			} else if v.Lithium < v.LiMax-0.1 && v.Credits >= liPrice {
+			} else if v.Lithium < v.LiMax-0.1 && a.payPort(d.stellar, liPrice/10) {
 				v.Lithium += 0.1
-				v.Credits -= liPrice / 10
-			} else if v.RCSFuel < v.RCSMax-0.2 && v.Credits >= 3 {
+			} else if v.RCSFuel < v.RCSMax-0.2 && a.payPort(d.stellar, 3) {
 				v.RCSFuel += 0.4
-				v.Credits -= 3
 			} else if p := a.World.MainPlayer; p != nil && p.Rounds < p.RoundsMax &&
-				v.Credits >= world.RoundCr*4 {
+				v.Credits >= world.RoundCr*4 && a.armouryHas(d.stellar, 4) {
 				// the armoury: the last meter on the walk, same price the
-				// AI's planets pay at their own pads
+				// AI's planets pay at their own pads — and the same shelf
+				a.payPort(d.stellar, world.RoundCr*4)
+				a.armouryDraw(d.stellar, 4)
 				p.Rounds = min(p.Rounds+4, p.RoundsMax)
-				v.Credits -= world.RoundCr * 4
 			}
 		case inpututil.IsKeyJustPressed(ebiten.KeyY):
-			if cost := v.RepairCost(); cost > 0 && v.Credits >= cost {
-				v.Credits -= cost
+			if cost := v.RepairCost(); cost > 0 && a.payPort(d.stellar, cost) {
 				v.Dmg = reentry.Damage{}
 				a.Console.Notifyf("Repairs complete: %d cr", cost)
 			}
@@ -489,7 +480,8 @@ func (a *App) updateDock() {
 			a.saveGame()
 			a.Console.Notifyf("Berth save written — DED resumes here.")
 		case inpututil.IsKeyJustPressed(ebiten.KeyG):
-			a.Console.Notifyf("The gaming annex is packed. (Charisma tables: Phase 5.)")
+			d.view = dockGovern
+			a.openGovern()
 		case inpututil.IsKeyJustPressed(ebiten.KeyL):
 			st := d.stellar
 			a.dock = nil
@@ -705,6 +697,8 @@ func (a *App) drawDock(screen *ebiten.Image) {
 		}
 	case dockJournal:
 		a.drawDockJournal(screen, x, y)
+	case dockGovern:
+		a.drawGovern(screen, x, y)
 	case dockOutfit:
 		ui.DrawText(screen, "OUTFITTER — the power grid is the ship. Number buys, O leaves.", x, y+90, 1)
 		if g := v.Grid; g != nil {
@@ -791,7 +785,7 @@ func (a *App) drawDock(screen *ebiten.Image) {
 			{"S", "Shipyard — change your hull", ui.ToneKhaki, false},
 			{"Y", repLabel, repTone, repLit},
 			{"V", "Save berth — write the pilot file", ui.ToneGray, false},
-			{"G", "Gaming Annex — queue-jumping charisma", ui.ToneKhaki, false},
+			{"G", "Governor's Desk — the world's books, chart and orders", ui.ToneKhaki, false},
 			{"L", "Leave — launch to orbit", ui.ToneGreen, true},
 		}
 		for i, o := range opts {

@@ -117,8 +117,10 @@ func TestHandoverDoesNotDuplicateCargo(t *testing.T) {
 	}
 }
 
-// A resident dying enters the books as a loss, with its cargo scattered —
-// not silently deleted, and not left floating in a hold nobody owns.
+// A resident dying enters the books as a loss, with its cargo DROPPED — not
+// silently deleted, and not thrown into the sink: it is a wreck field in the
+// orbit where it died, or already in the nearest hold with room, and the
+// auditor can point at every ton of it.
 func TestKillingAResidentEntersTheBooks(t *testing.T) {
 	a, uw := handoverFixture(t)
 	h := a.uni.Fleet.Hulls[0]
@@ -153,10 +155,34 @@ func TestKillingAResidentEntersTheBooks(t *testing.T) {
 	if bad := a.uni.Audit(); len(bad) > 0 {
 		t.Errorf("books unbalanced after a resident died: %v", bad[0])
 	}
-	// The wreck's cargo is in the sink, not in a hold and not nowhere.
-	if a.uni.Sink[econ.Ore] < 49 {
-		t.Errorf("only %.1f t of ore reached the sink", a.uni.Sink[econ.Ore])
+	// The wreck's cargo persists: in the field over the port, or in a hold
+	// that scooped it. Never the sink.
+	adrift := a.uni.Fleet.DebrisAfloat()[econ.Ore]
+	var held float64
+	for _, o := range a.uni.Fleet.Hulls {
+		if o.Status != traffic.Lost {
+			held += o.Cargo[econ.Ore]
+		}
 	}
+	if adrift+held < 49 {
+		t.Errorf("only %.1f t of ore adrift and %.1f t in holds; the cargo was lost", adrift, held)
+	}
+	if a.uni.Sink[econ.Ore] > 0 {
+		t.Errorf("%.1f t of ore went to the sink; a wreck is not a grave", a.uni.Sink[econ.Ore])
+	}
+	if a.uni.Fleet.DebrisAfloat()[econ.Scrap]+heldScrap(a) < h.Dry-1e-6 {
+		t.Errorf("the hull's %.0f t did not become scrap", h.Dry)
+	}
+}
+
+func heldScrap(a *App) float64 {
+	var t float64
+	for _, o := range a.uni.Fleet.Hulls {
+		if o.Status != traffic.Lost {
+			t += o.Cargo[econ.Scrap]
+		}
+	}
+	return t
 }
 
 // The player's counter has to move real tons. Buying takes them out of a
