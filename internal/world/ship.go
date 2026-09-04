@@ -85,10 +85,17 @@ func (r Role) holdFactor() float64 {
 type Ship struct {
 	Body
 	Heading float64 // degrees, 0 = up, clockwise
-	ShipID  int     // catalog ID
-	Team    Team
-	Name    string
-	Kind    ShipKind
+
+	// HullID links this ship back to its record in the universal census
+	// (internal/traffic), or -1 for a hull that exists only in this scene.
+	// A ship that carries one is a REAL ship somebody has been tracking
+	// across the map for days: it flew in from somewhere, it is carrying a
+	// manifest somebody paid for, and when it dies it dies in the books.
+	HullID int
+	ShipID int // catalog ID
+	Team   Team
+	Name   string
+	Kind   ShipKind
 
 	Health int
 	Money  int
@@ -147,6 +154,7 @@ func (w *World) NewShip(shipID int, team Team, name string, kind ShipKind) *Ship
 		Crew:    1 + w.Rand.Intn(50),
 		Heading: float64(w.Rand.Intn(360)),
 		served:  1,
+		HullID:  -1,
 	}
 	s.Outfit(w)
 	w.Add(s)
@@ -436,6 +444,15 @@ func (s *Ship) die(w *World) {
 	w.SpawnExplosionFrom(s)
 	w.MaybeDropItem(s)
 	s.Deaths++
+
+	// A hull the universe has been tracking dies in the books, not just on
+	// the screen: its cargo is scattered, its census row goes to Lost, and
+	// the journal says so. The callback exists because internal/world must
+	// not know what a universe is — it reports a death and lets whoever
+	// cares do the accounting.
+	if w.OnKill != nil {
+		w.OnKill(s)
+	}
 
 	if sp := w.SpawnPointFor(s.Team); sp != nil {
 		s.P = sp.P

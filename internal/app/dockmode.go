@@ -36,6 +36,7 @@ const (
 	dockTrade
 	dockOutfit
 	dockYard
+	dockJournal
 )
 
 type dockState struct {
@@ -365,25 +366,30 @@ func (a *App) updateDock() {
 		if inpututil.IsKeyJustPressed(ebiten.KeyUp) {
 			d.tradeSel = (d.tradeSel + n - 1) % n
 		}
-		st := a.gal.Stellars[d.stellar]
-		price := market.Price(st.System, d.stellar, d.tradeSel, v.Day, v.Events)
 		qty := 1
 		if ebiten.IsKeyPressed(ebiten.KeyShiftLeft) || ebiten.IsKeyPressed(ebiten.KeyShiftRight) {
 			qty = 10
 		}
+		// The counter buys and sells against the port's REAL warehouse, so a
+		// world can be sold out and a big sale genuinely supplies it. See
+		// counter.go — the tons and the credits move together, or neither
+		// moves.
 		if inpututil.IsKeyJustPressed(ebiten.KeyEqual) {
-			for i := 0; i < qty && v.Credits >= price && v.CargoTotal() < overstuffCap; i++ {
-				v.Credits -= price
-				v.Cargo[d.tradeSel]++
+			if got := a.buyTons(d.stellar, d.tradeSel, qty); got < qty {
+				if a.onHand(d.stellar, d.tradeSel) <= 0 {
+					a.Console.Notifyf("%s is sold out of %s.",
+						a.gal.Stellars[d.stellar].Name, market.Commodities[d.tradeSel].Name)
+				}
 			}
 		}
 		if inpututil.IsKeyJustPressed(ebiten.KeyMinus) {
-			for i := 0; i < qty && v.Cargo[d.tradeSel] > 0; i++ {
-				v.Credits += price
-				v.Cargo[d.tradeSel]--
-			}
+			a.sellTons(d.stellar, d.tradeSel, qty)
 		}
 		if inpututil.IsKeyJustPressed(ebiten.KeyT) {
+			d.view = dockMain
+		}
+	case dockJournal:
+		if inpututil.IsKeyJustPressed(ebiten.KeyJ) || inpututil.IsKeyJustPressed(ebiten.KeyM) {
 			d.view = dockMain
 		}
 	case dockOutfit:
@@ -449,6 +455,8 @@ func (a *App) updateDock() {
 			d.view = dockTrade
 		case inpututil.IsKeyJustPressed(ebiten.KeyO):
 			d.view = dockOutfit
+		case inpututil.IsKeyJustPressed(ebiten.KeyJ):
+			d.view = dockJournal
 		case inpututil.IsKeyJustPressed(ebiten.KeyS):
 			d.view = dockYard
 			d.yardSel = a.Cfg.PlayerShipID - 1
@@ -647,10 +655,10 @@ func (a *App) drawDock(screen *ebiten.Image) {
 		ui.DrawText(screen, fmt.Sprintf("hold %d/%d t (clamps take %d) · prices differ by station — haul low to high",
 			v.CargoTotal(), cargoCap, overstuffCap), x, y+110, 0.7)
 		yy := y + 140
-		ui.DrawText(screen, "   COMMODITY        PRICE  TREND   ABOARD", x, yy, 0.7)
+		ui.DrawText(screen, "   COMMODITY        PRICE  TREND        IN PORT  ABOARD", x, yy, 0.7)
 		yy += 22
 		for i, cm := range market.Commodities {
-			price := market.Price(st.System, d.stellar, i, v.Day, v.Events)
+			price := a.shopPrice(d.stellar, i)
 			trend := "  ·"
 			switch market.Trend(st.System, d.stellar, i, v.Day, v.Events) {
 			case 1:
@@ -661,13 +669,21 @@ func (a *App) drawDock(screen *ebiten.Image) {
 			sel := float32(0.75)
 			if i == d.tradeSel {
 				sel = 1
-				vector.DrawFilledRect(screen, float32(x-8), float32(yy-2), 520, 18,
+				vector.DrawFilledRect(screen, float32(x-8), float32(yy-2), 620, 18,
 					premul(color.RGBA{29, 58, 80, 255}, 0.6), false)
 			}
-			ui.DrawText(screen, fmt.Sprintf("%s%-14s %6d cr %-11s %4d t",
+			ui.DrawText(screen, fmt.Sprintf("%s%-14s %6d cr %-11s %s %5d t",
 				map[bool]string{true: "> ", false: "  "}[i == d.tradeSel],
-				cm.Name, price, trend, v.Cargo[i]), x, yy, sel)
+				cm.Name, price, trend, a.tradeLine(d.stellar, i), v.Cargo[i]), x, yy, sel)
 			yy += 20
+		}
+		if uw := a.uniWorld(d.stellar); uw != nil {
+			yy += 6
+			ui.DrawText(screen, fmt.Sprintf("  %s makes %s — its own goods sell cheap here, and what it",
+				uw.Name, uw.Speciality()), x, yy, 0.65)
+			ui.DrawText(screen, "  cannot make, it pays for. IN PORT is a real warehouse: it runs out.",
+				x, yy+15, 0.65)
+			yy += 24
 		}
 		yy += 14
 		ui.DrawText(screen, "WORLD EVENTS ON THE WIRE:", x, yy, 0.8)
@@ -687,6 +703,8 @@ func (a *App) drawDock(screen *ebiten.Image) {
 				ev.Name, market.Commodities[ev.Commodity].Name, dir, where, ev.DaysLeft), x, yy, 0.7)
 			yy += 18
 		}
+	case dockJournal:
+		a.drawDockJournal(screen, x, y)
 	case dockOutfit:
 		ui.DrawText(screen, "OUTFITTER — the power grid is the ship. Number buys, O leaves.", x, y+90, 1)
 		if g := v.Grid; g != nil {
@@ -769,6 +787,7 @@ func (a *App) drawDock(screen *ebiten.Image) {
 			{"R", "Refuel (hold) — jump fuel, then lithium", ui.ToneKhaki, false},
 			{"T", "Trade Center — the commodity board", ui.ToneKhaki, false},
 			{"O", "Outfitter — the power grid catalog", ui.ToneKhaki, false},
+			{"J", "Trade Journal — lanes, arrivals, rivals", ui.ToneKhaki, false},
 			{"S", "Shipyard — change your hull", ui.ToneKhaki, false},
 			{"Y", repLabel, repTone, repLit},
 			{"V", "Save berth — write the pilot file", ui.ToneGray, false},

@@ -81,6 +81,44 @@ func (a *App) seedUniverse() {
 	}
 	a.uni = universe.New(a.voy.Seed, ports, hullsPerColour)
 	a.uniDay = a.voy.Day
+	// The player's deck is matter like anybody's, and so are the manifests of
+	// the census hulls currently flying as ships in this sector. Both live
+	// outside internal/universe and both have to be on the books, or the two
+	// places a ton can hide are exactly the two places a player can stand.
+	a.uni.Account(a.playerHold)
+	a.uni.Account(a.residentHolds)
+	if a.World != nil {
+		a.World.OnKill = a.loseResident
+	}
+	a.syncPlanetStock()
+	// The first enterSystem ran before any of this existed — a new game
+	// dresses the sky and only then works out what economy is behind it — so
+	// the handover has to be kicked once here or the opening system is the
+	// only one in the game with no census traffic in it.
+	if a.voy != nil {
+		a.residentsIn(a.voy.System)
+	}
+}
+
+// residentHolds is the tonnage sitting in the holds of census hulls that are
+// currently flying as ships in this sector. While a hull is Resident its
+// cargo is in the world's manifest and NOT in its census row, so this is the
+// only place that mass can be counted from.
+func (a *App) residentHolds() econ.Stock {
+	var s econ.Stock
+	if a.World == nil {
+		return s
+	}
+	for _, e := range a.World.Entities {
+		sh, ok := e.(*world.Ship)
+		if !ok || sh.HullID < 0 {
+			continue
+		}
+		for i := 0; i < len(sh.Hold) && i < econ.BoardWidth; i++ {
+			s.Add(econ.Material(i), float64(sh.Hold[i]))
+		}
+	}
+	return s
 }
 
 // hullsPerColour is the fixed census each power starts with. It is small on
@@ -101,6 +139,8 @@ func (a *App) stepUniverse() {
 		a.uniDay++
 	}
 	a.uniDay = a.voy.Day
+	a.drainPlanetStock() // what the pads burned patching hulls leaves the warehouse
+	a.syncPlanetStock()
 }
 
 // maxCatchUp bounds a single catch-up so a save restored after a very long
@@ -145,6 +185,25 @@ func (a *App) registerEconomyCommands(c *console.Console) {
 			govt.RowTotal, govt.ColTotal)
 		c.Printf("  is stronger overall, and no axis is worth more than another.")
 	}, "trifecta", "govts", "powers")
+
+	// A dev clock. The economy only moves when the voyage does — landings and
+	// jumps burn days — so testing a market means either flying for an hour
+	// or turning the handle here.
+	c.Register(func(c *console.Console, arg string) {
+		if a.voy == nil {
+			c.Printf("- No game.")
+			return
+		}
+		n := 30
+		fmt.Sscanf(arg, "%d", &n)
+		if n < 1 {
+			n = 1
+		}
+		a.voy.passDays(n, a.gal)
+		a.stepUniverse()
+		a.drainNotices()
+		c.Printf("- %d days pass; it is day %d.", n, a.voy.Day)
+	}, "day", "days", "wait")
 
 	c.Register(func(c *console.Console, arg string) {
 		if a.uni == nil {

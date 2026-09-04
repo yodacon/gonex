@@ -182,6 +182,22 @@ type Registry struct {
 	Hulls   []*Hull
 	Lanes   map[[2]int]*Lane
 	Journal *Journal
+
+	// Name renders a stellar ID as the port's name for the journal. The
+	// registry knows hulls and lanes, not the gazetteer, so whoever owns the
+	// map supplies this. Without it the journal reads "1870137 → 1370191",
+	// which is a log a machine can follow and a person cannot.
+	Name func(stellar int) string
+}
+
+// port renders a stellar for the journal, falling back to its number.
+func (r *Registry) port(id int) string {
+	if r.Name != nil {
+		if n := r.Name(id); n != "" {
+			return n
+		}
+	}
+	return fmt.Sprintf("#%d", id)
 }
 
 // NewRegistry opens an empty census.
@@ -324,9 +340,11 @@ func (r *Registry) Depart(h *Hull, from, to int, st Status, day int) {
 		verb = "turns for home"
 	}
 	if laden := h.Laden(); laden > 0 {
-		r.Journal.Logf(day, h.ID, "%s %s %d→%d, %.0ft aboard", h.Name, verb, from, to, laden)
+		r.Journal.Logf(day, h.ID, "%s %s %s → %s, %.0ft aboard",
+			h.Name, verb, r.port(from), r.port(to), laden)
 	} else {
-		r.Journal.Logf(day, h.ID, "%s %s %d→%d, empty", h.Name, verb, from, to)
+		r.Journal.Logf(day, h.ID, "%s %s %s → %s, empty",
+			h.Name, verb, r.port(from), r.port(to))
 	}
 }
 

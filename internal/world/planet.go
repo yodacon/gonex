@@ -39,6 +39,13 @@ const (
 	repairIP      = 0.4
 	scrapCrPerTon = 60
 
+	// OreIndex is where Ore sits on the commodity board. Hull plates are
+	// pressed from it, which is the one place the trade economy's warehouse
+	// reaches into the war economy's pad.
+	OreIndex = 1
+	// platePerHull is tons of ore per point of hull repaired.
+	platePerHull = 0.35
+
 	// The pad. A turnaround is short, but it is time not spent shooting, and
 	// a queue under fire is a massacre.
 	padBase = 2.0
@@ -128,14 +135,33 @@ func (p *Planet) serve(s *Ship) Service {
 	}
 
 	if want := float64(maxHealth - s.Health); want > 0 {
+		// Hull plates come out of the ore in the warehouse. A world whose
+		// ore has been hauled away by somebody else's freighters cannot
+		// patch the squadron flying out of it — which makes the supply line
+		// the war economy built cuttable by TRADE as well as by guns. A
+		// planet nobody is tracking stock for (Stock nil or unfilled) falls
+		// back to the old capacity-only rule rather than refusing forever.
+		if plates := p.plateStock(); plates >= 0 {
+			want = math.Min(want, plates/platePerHull)
+		}
 		got := int(p.spend(want, repairCr, repairIP))
 		s.Health += got
 		svc.Hull = got
-		if float64(got) < want {
+		p.PlateDraw += float64(got) * platePerHull
+		if float64(got) < want || want < float64(maxHealth-s.Health) {
 			svc.Refused = "repairs"
 		}
 	}
 	return svc
+}
+
+// plateStock is the ore on hand for hull work, or -1 when nobody is keeping
+// stock for this world.
+func (p *Planet) plateStock() float64 {
+	if len(p.Stock) <= OreIndex {
+		return -1
+	}
+	return float64(p.Stock[OreIndex])
 }
 
 // spend buys as many units as the planet's capacity and treasury allow,
@@ -235,6 +261,10 @@ func (p *Planet) Setup(pop int) {
 	p.Credits = pop / 4
 	if p.Stock == nil {
 		p.Stock = make([]int, CommodityCount)
+		// A world starts with the ore its own population has been digging.
+		// Without this every pad in a scene that has no trade economy over it
+		// would refuse repairs from the first second.
+		p.Stock[OreIndex] = pop / 4000
 	}
 }
 

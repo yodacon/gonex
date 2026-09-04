@@ -70,6 +70,12 @@ type World struct {
 	// Notify surfaces game events (kills, team changes) to the UI layer.
 	Notify func(format string, args ...any)
 
+	// OnKill fires when a ship dies, before it respawns. It is how a death
+	// on this map reaches the economy above it — a hull with a census row
+	// scatters its cargo and is struck off. This package deliberately does
+	// not know what is on the other end of it.
+	OnKill func(*Ship)
+
 	// ShieldFilter, when set, lets the app's power grid eat a hit before
 	// the main player's hull does; it returns the damage that gets through.
 	ShieldFilter func(dmg int) int

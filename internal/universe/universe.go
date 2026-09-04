@@ -26,6 +26,14 @@ type Universe struct {
 	// whole trick: "used up" is a place, not a disappearance.
 	Sink econ.Stock
 
+	// Extern are pools of matter this package does not own but must still
+	// account for — the player's own hold, above all. A ton bought at a
+	// counter has left a warehouse and is somewhere; if the auditor cannot
+	// see where, the player becomes the one hole in an otherwise closed
+	// universe, and the first thing anybody would do is stand at a counter
+	// and buy their way out of the conservation law.
+	Extern []func() econ.Stock
+
 	Rng *rand.Rand
 }
 
@@ -49,6 +57,12 @@ func New(seed int64, ports []Port, hullsPer int) *Universe {
 		Rng:     rand.New(rand.NewSource(seed ^ 0x5DEECE66D)),
 	}
 	u.Fleet = traffic.NewRegistry(u.Journal)
+	u.Fleet.Name = func(id int) string {
+		if w := u.Worlds[id]; w != nil {
+			return w.Name
+		}
+		return ""
+	}
 
 	var genesis econ.Stock
 	for _, p := range ports {
@@ -120,8 +134,15 @@ func (u *Universe) Pools() []econ.Stock {
 		pools = append(pools, w.Reserve, w.Warehouse)
 	}
 	pools = append(pools, u.Fleet.CargoAfloat(), u.Sink)
+	for _, f := range u.Extern {
+		pools = append(pools, f())
+	}
 	return pools
 }
+
+// Account registers a pool of matter held outside this package. Call it once,
+// before the books matter; the closure is read on every audit.
+func (u *Universe) Account(f func() econ.Stock) { u.Extern = append(u.Extern, f) }
 
 // ReopenBooks re-bases the accounts on whatever is in the universe right
 // now. It is for the two moments where the current state is the starting

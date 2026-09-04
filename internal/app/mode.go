@@ -149,6 +149,10 @@ func (a *App) enterSystem(sysID int) {
 	if sys == nil || a.World == nil {
 		return
 	}
+	// Hand every materialised census hull back before the sky is re-dressed.
+	// A hull left Resident in a sector nobody is drawing has stopped moving
+	// forever, and its cargo is stranded outside every warehouse in the game.
+	a.releaseResidents()
 	// Arriving in a system re-dresses the sky with that system's stellars,
 	// but HELD WORLDS ARE NOT SCENERY. A planet somebody's colour is flying
 	// out of carries a population, a treasury and a pad queue, and sweeping
@@ -236,6 +240,7 @@ func (a *App) enterSystem(sysID int) {
 			}
 		}
 	}
+	a.residentsIn(sysID)
 	a.Console.Notifyf("Arrived: %s system (%s) — %d stellar(s), %d planet(s), %d held",
 		sys.Name, sys.Govt, len(stellars), standing, holdings)
 	if chartered > 0 {

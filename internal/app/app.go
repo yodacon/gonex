@@ -200,6 +200,10 @@ func New() (*App, error) {
 				} else if strings.HasSuffix(boot, " missions") {
 					a.dock.view = dockMissions
 					a.dock.rollMissions(a)
+				} else if strings.HasSuffix(boot, " journal") {
+					a.dock.view = dockJournal
+				} else if strings.HasSuffix(boot, " trade") {
+					a.dock.view = dockTrade
 				}
 			} else if _, err := fmt.Sscanf(boot, "takeoff %d", &id); err == nil && id > 0 {
 				a.startTakeoff(id)

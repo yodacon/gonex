@@ -312,3 +312,94 @@ func TestPricesRespondToScarcity(t *testing.T) {
 		t.Errorf("scarcity moved the price by only %d credits", short-glut)
 	}
 }
+
+// Mass held outside this package still has to be on the books. The player's
+// deck is the case that matters: a counter where tons can be bought is a
+// counter where tons can be INVENTED, and the player is the one actor in the
+// game standing at one all day.
+func TestExternallyHeldMassIsAudited(t *testing.T) {
+	u := newTestUniverse(17)
+	var deck econ.Stock
+	u.Account(func() econ.Stock { return deck })
+
+	for d := 0; d < 40; d++ {
+		u.Tick()
+	}
+	if bad := u.Audit(); len(bad) > 0 {
+		t.Fatalf("unbalanced before trading: %v", bad[0])
+	}
+
+	// Buy: the tons leave a warehouse and land on the deck. Books hold.
+	w := u.Worlds[133]
+	for _, m := range []econ.Material{econ.Ore, econ.Lumber, econ.Chips} {
+		econ.Transfer(&w.Warehouse, &deck, m, 40)
+	}
+	if bad := u.Audit(); len(bad) > 0 {
+		t.Errorf("unbalanced after a purchase: %v", bad[0])
+	}
+	if deck.Total() <= 0 {
+		t.Fatal("nothing was bought")
+	}
+
+	// Sell somewhere else: the tons leave the deck and supply that port.
+	dst := u.Worlds[300]
+	for m := econ.Material(0); m < econ.Count; m++ {
+		econ.Transfer(&deck, &dst.Warehouse, m, deck[m])
+	}
+	if bad := u.Audit(); len(bad) > 0 {
+		t.Errorf("unbalanced after a sale: %v", bad[0])
+	}
+	if deck.Total() > 1e-9 {
+		t.Errorf("%.3f t stuck on the deck after selling everything", deck.Total())
+	}
+
+	// And an UNREGISTERED pool must read as a leak, or the safety net is
+	// decorative: forgetting to account for a hold IS losing track of it.
+	stray := u.Worlds[134]
+	var hidden econ.Stock
+	econ.Transfer(&stray.Warehouse, &hidden, econ.Ore, 25)
+	if bad := u.Audit(); len(bad) == 0 {
+		t.Error("moving 25 t into an unaccounted pool did not register as a leak")
+	}
+}
+
+// A hull dying takes its cargo out of circulation without taking it off the
+// books, and the census remembers it forever.
+func TestLossesShowUpInTheBooksAndTheCensus(t *testing.T) {
+	u := newTestUniverse(23)
+	for d := 0; d < 80; d++ {
+		u.Tick()
+	}
+	before := u.Fleet.Afloat()
+	killed := 0
+	for _, h := range u.Fleet.Hulls {
+		if h.Status == traffic.Lost {
+			continue
+		}
+		u.Lose(h, "test")
+		killed++
+		if killed >= 5 {
+			break
+		}
+	}
+	if bad := u.Audit(); len(bad) > 0 {
+		t.Errorf("books unbalanced after %d losses: %v", killed, bad[0])
+	}
+	if got := u.Fleet.Afloat(); got != before-killed {
+		t.Errorf("%d afloat after %d losses, want %d", got, killed, before-killed)
+	}
+	if u.Journal.LostHulls != killed {
+		t.Errorf("journal counted %d losses, want %d", u.Journal.LostHulls, killed)
+	}
+	// The census itself never shrinks: a lost hull is still a row.
+	if got := len(u.Fleet.Hulls); got != 3*12 {
+		t.Errorf("census is %d rows after losses, want %d", got, 3*12)
+	}
+	// And the simulation must survive its own casualties.
+	for d := 0; d < 40; d++ {
+		u.Tick()
+	}
+	if bad := u.Audit(); len(bad) > 0 {
+		t.Errorf("books unbalanced running on after losses: %v", bad[0])
+	}
+}

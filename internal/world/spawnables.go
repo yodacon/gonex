@@ -152,6 +152,13 @@ type Planet struct {
 	Scrap   float64 // tons of salvage in the yard
 	Pad     []*Ship // ships turning around right now
 
+	// PlateDraw is ore this pad has burned patching hulls since anybody last
+	// collected the figure. The war economy repairs against it; the trade
+	// economy debits its warehouse by it. It accumulates here rather than
+	// calling out because internal/world knows nothing about the universe
+	// above it, and must not have to.
+	PlateDraw float64
+
 	// Rally is the AI's muster slot for this port: whatever flight is forming
 	// up here. The simulation never looks inside it — it is stored here only
 	// because the port is the obvious rendezvous, and hanging it off the
