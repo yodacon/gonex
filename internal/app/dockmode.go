@@ -273,9 +273,34 @@ func (a *App) launchEscorts() {
 	}
 }
 
+// dockBack returns from any concourse sub-screen to the concourse. It is
+// what Escape does while docked, and Backspace too; it reports whether there
+// was anything to go back from, so the caller can fall through to the game
+// menu when there was not.
+func (a *App) dockBack() bool {
+	d := a.dock
+	if a.mode != modeLanded || d == nil || d.view == dockMain {
+		return false
+	}
+	if d.view == dockGovern && d.gov.menu {
+		d.gov.menu = false // one level at a time: the build menu closes first
+		return true
+	}
+	d.view = dockMain
+	return true
+}
+
 func (a *App) updateDock() {
 	d := a.dock
 	v := a.voy
+
+	// Every sub-screen has its own letter home (O leaves the outfitter, S
+	// the yard, T the board) and none of them was obvious. Backspace is the
+	// one key that always means "back"; Escape does the same from Update.
+	if inpututil.IsKeyJustPressed(ebiten.KeyBackspace) && a.dockBack() {
+		a.drainNotices()
+		return
+	}
 
 	// shore power: on the pad the bus idles, so the reactor's whole surplus
 	// walks the caps and battery back up while the pad loop takes the heat.
@@ -558,6 +583,12 @@ func (a *App) drawDock(screen *ebiten.Image) {
 		ui.VGauge(screen, gx+float64(i)*44, 356, 22, 130, g.frac, g.c, g.label, g.val)
 	}
 
+	// The way home, on every sub-screen, in the same place: a green Ares
+	// keycap at the foot. The desk carries its own in the keycap grid.
+	if d.view != dockMain && d.view != dockGovern {
+		ui.Keycap(screen, x, float64(ScreenH)-46, 330, "ESC", "Back to the concourse", ui.ToneGreen, true)
+	}
+
 	switch d.view {
 	case dockBar:
 		ui.DrawText(screen, "SPACEPORT BAR — a keypress takes a contract", x, y+90, 1)
@@ -596,7 +627,7 @@ func (a *App) drawDock(screen *ebiten.Image) {
 		ui.Keycap(screen, x+558, by, 176, "X", "Crew off", ui.ToneKhaki, false)
 		ui.Keycap(screen, x+744, by, 176, "B", "Leave", ui.ToneGreen, true)
 	case dockMissions:
-		ui.DrawText(screen, "MISSION COMPUTER — postings for this port, filtered by your affiliations. M leaves.", x, y+90, 1)
+		ui.DrawText(screen, "MISSION COMPUTER — postings for this port, filtered by your affiliations. M or Esc returns.", x, y+90, 1)
 		if len(d.board) == 0 {
 			ui.DrawText(screen, "No postings match this port and your record.", x, y+120, 0.8)
 		}
@@ -643,7 +674,7 @@ func (a *App) drawDock(screen *ebiten.Image) {
 		ui.DrawText(screen, "an OPEN slot is that percentage come up.", x, yy+16, 0.65)
 		a.drawMissionChart(screen, st.System, chartDest, 620, y+120, 344, 330)
 	case dockTrade:
-		ui.DrawText(screen, "COMMODITY BOARD — Up/Down select · + buys · - sells (Shift ×10) · T leaves", x, y+90, 1)
+		ui.DrawText(screen, "COMMODITY BOARD — Up/Down select · + buys · - sells (Shift ×10) · T or Esc returns", x, y+90, 1)
 		ui.DrawText(screen, fmt.Sprintf("hold %d/%d t (clamps take %d) · prices differ by station — haul low to high",
 			v.CargoTotal(), cargoCap, overstuffCap), x, y+110, 0.7)
 		yy := y + 140
@@ -700,7 +731,7 @@ func (a *App) drawDock(screen *ebiten.Image) {
 	case dockGovern:
 		a.drawGovern(screen, x, y)
 	case dockOutfit:
-		ui.DrawText(screen, "OUTFITTER — the power grid is the ship. Number buys, O leaves.", x, y+90, 1)
+		ui.DrawText(screen, "OUTFITTER — the power grid is the ship. Number buys; O or Esc returns to the concourse.", x, y+90, 1)
 		if g := v.Grid; g != nil {
 			ui.DrawText(screen, fmt.Sprintf(
 				"plant: reactor %.1f MW · battery %.0f MJ · caps %.0f MJ · radiators %.1f MW · heat ceiling %.0f MJ",
@@ -716,7 +747,7 @@ func (a *App) drawDock(screen *ebiten.Image) {
 			yy += 24
 		}
 	case dockYard:
-		ui.DrawText(screen, "SHIPYARD — Up/Down browse, Enter buys (60% trade-in), S leaves.", x, y+90, 1)
+		ui.DrawText(screen, "SHIPYARD — Up/Down browse, Enter buys (60% trade-in); S or Esc returns.", x, y+90, 1)
 		n := a.Catalog.Count()
 		cur := a.Cfg.PlayerShipID
 		curVal := shipPrice(a.Catalog.Get(cur)) * 6 / 10

@@ -125,12 +125,8 @@ func (a *App) updateGovern() {
 	g := &d.gov
 	n := len(g.neigh)
 	switch {
-	case inpututil.IsKeyJustPressed(ebiten.KeyEscape) || inpututil.IsKeyJustPressed(ebiten.KeyG):
-		if g.menu {
-			g.menu = false
-		} else {
-			d.view = dockMain
-		}
+	case inpututil.IsKeyJustPressed(ebiten.KeyG):
+		a.dockBack() // Escape and Backspace do the same from the dock loop
 	case inpututil.IsKeyJustPressed(ebiten.KeyJ):
 		d.view = dockJournal
 	case n > 0 && (inpututil.IsKeyJustPressed(ebiten.KeyRight) || inpututil.IsKeyJustPressed(ebiten.KeyDown)):
@@ -359,7 +355,7 @@ func (a *App) drawGovern(screen *ebiten.Image, x, y float64) {
 		seat = "open (the first building is the charter)"
 	}
 	ui.DrawText(screen, fmt.Sprintf("GOVERNOR'S DESK - %s / %s / seat: %s", here.Name, here.Govt.Name(), seat), x, y+90, 1)
-	ui.DrawText(screen, "arrows: cursor   B build  O flight  C convoy  X cancel  L lane  R relations  T tariff  J journal  G leave",
+	ui.DrawText(screen, "arrows: cursor   B build  O flight  C convoy  X cancel  L lane  R relations  T tariff  J journal  G/Esc back",
 		x, y+106, 0.6)
 
 	a.drawGovernRail(screen, here, x, y+134)
@@ -752,7 +748,7 @@ func (a *App) drawGovernDesk(screen *ebiten.Image, w *universe.World, x, y float
 		{"L", "Lane > " + trunc(tname, 10), tone(!a.seatFor(w))},
 		{"R", "Rel: " + a.relationLabel(w, t), tone(true)},
 		{"T", fmt.Sprintf("Tariff %.0f%%", w.Tariff*100), tone(true)},
-		{"G", "Leave", ui.ToneGreen},
+		{"G", "Back (Esc)", ui.ToneGreen},
 	}
 	for i, c := range caps {
 		col, row := i%4, i/4

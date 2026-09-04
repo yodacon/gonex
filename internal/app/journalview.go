@@ -35,7 +35,7 @@ func (a *App) drawDockJournal(screen *ebiten.Image, x, y float64) {
 	if d == nil {
 		return
 	}
-	ui.DrawText(screen, "TRADE JOURNAL — J or M returns to the concourse", x, y+90, 1)
+	ui.DrawText(screen, "TRADE JOURNAL — J, M or Esc returns to the concourse", x, y+90, 1)
 
 	if a.uni == nil {
 		ui.DrawText(screen, "No traffic data at this port.", x, y+120, 0.8)

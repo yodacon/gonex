@@ -201,6 +201,13 @@ func New() (*App, error) {
 				} else if strings.HasSuffix(boot, " govern") {
 					a.dock.view = dockGovern
 					a.openGovern()
+				} else if strings.HasSuffix(boot, " outfit") {
+					a.dock.view = dockOutfit
+				} else if strings.HasSuffix(boot, " trade") {
+					a.dock.view = dockTrade
+				} else if strings.HasSuffix(boot, " yard") {
+					a.dock.view = dockYard
+					a.dock.yardSel = a.Cfg.PlayerShipID - 1
 				} else if strings.HasSuffix(boot, " missions") {
 					a.dock.view = dockMissions
 					a.dock.rollMissions(a)
@@ -381,7 +388,12 @@ func (a *App) Update() error {
 	a.cview.Update(dt)
 
 	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
-		a.toggleMenu()
+		// On the concourse's sub-screens Escape is "back", not "menu": a
+		// player deep in the outfitter wants the concourse, and got the
+		// game menu over the top of it instead.
+		if !a.dockBack() {
+			a.toggleMenu()
+		}
 	}
 	if a.running() && a.Console.State == console.Hidden &&
 		a.mode != modeEntry && // on the corridor, TAB is the algebra panel
