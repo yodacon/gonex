@@ -296,7 +296,7 @@ const (
 	ratingCoverDays  = 3.0
 	siloBonus        = 0.10
 	maxRating        = 0.95
-	roundsPerHullDay = 0.25 // tons of Rounds a berthed hull's crew fires in drills per day
+	roundsPerHullDay = 0.08 // tons of Rounds a berthed hull's crew fires in drills per day
 )
 
 // Garrison is the armed hulls of the holding colour berthed at w: what

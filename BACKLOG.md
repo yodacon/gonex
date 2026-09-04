@@ -31,8 +31,10 @@ resources directly** —
       passing ships and the player, folded back to the census on leaving.
 - [x] Auto-governor: tax, doctrines per colour, priority world, policy and
       focus; the desk in four tabs; `GONEX_SEED` and `tune`.
-- [ ] Balance pass on the full gazetteer: capitals run out of rounds by day
-      120 (no Munitions chain ranks), hulls still deadhead a lot, famine curve.
+- [x] Rounds pass: capitals mandate a Munitions chain, burn quartered, restock
+      convoys, steel by courier, carry-on for laden hulls at broke ports.
+- [ ] Balance pass on the full gazetteer: hulls still deadhead a lot, famine
+      curve, broke neutral treasuries.
 
 - [x] Landing on planets — far beyond the konex stub: landing is now an
       **atmospheric reentry minigame** (`internal/reentry`, the MHD plasma-

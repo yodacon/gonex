@@ -114,6 +114,12 @@ func New(seed int64, ports []Port, hullsPer int) *Universe {
 			cap.endow(Works)
 			cap.endow(Bastion)
 			cap.endow(Habitat)
+			// The arsenal: a capital is founded making its own rounds, if it
+			// has the ferrite. The first year-long runs had every capital
+			// dry by day 120, because no colour's crust ranked a Munitions
+			// chain in its top two and rounds arrived only when a courier
+			// found the price worth it.
+			cap.Mandate = []string{"Munitions"}
 			cap.standUpIndustry()
 			cap.Reprice()
 		}

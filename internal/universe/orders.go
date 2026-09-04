@@ -69,7 +69,7 @@ func (u *Universe) File(o StandingOrder) error {
 		if !u.canTrade(o.Owner, dst.Govt) {
 			return fmt.Errorf("%s will not trade with %s", dst.Name, o.Owner)
 		}
-		if o.Mat.Refined() && !u.shuttleLink(src, dst) {
+		if shuttleOnly(o.Mat) && !u.shuttleLink(src, dst) {
 			return fmt.Errorf("%s moves by shuttle: %s and %s need a chartered lane", o.Mat, src.Name, dst.Name)
 		}
 		if o.Mat < 0 || o.Mat >= econ.Slag || o.Mat == econ.Compost {

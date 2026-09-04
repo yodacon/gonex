@@ -42,6 +42,7 @@ type WorldState struct {
 	Tariff    float64
 	Seat      Seat
 	Orders    []StandingOrder
+	Mandate   []string
 	Fed       float64
 }
 
@@ -84,7 +85,7 @@ func (u *Universe) Snapshot() *Snapshot {
 			Stellar: w.Stellar, Govt: w.Govt, Pop: w.Pop, Credits: w.Credits,
 			Reserve: w.Reserve, Warehouse: w.Warehouse, Built: w.Built, Endowed: w.Endowed,
 			Tariff: w.Tariff, Seat: w.Seat, Orders: append([]StandingOrder(nil), w.Orders...),
-			Fed: w.fed,
+			Mandate: append([]string(nil), w.Mandate...), Fed: w.fed,
 		})
 	}
 	for _, h := range u.Fleet.Hulls {
@@ -133,6 +134,7 @@ func (u *Universe) Restore(s *Snapshot) {
 		w.Reserve, w.Warehouse = ws.Reserve, ws.Warehouse
 		w.Built, w.Endowed, w.Tariff, w.Seat = ws.Built, ws.Endowed, ws.Tariff, ws.Seat
 		w.Orders = append([]StandingOrder(nil), ws.Orders...)
+		w.Mandate = append([]string(nil), ws.Mandate...)
 		w.fed = ws.Fed
 		w.standUpIndustry()
 		w.Reprice()

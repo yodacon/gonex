@@ -333,7 +333,7 @@ func (a *App) orderConvoy(w *universe.World) error {
 		if !w.Makes(m) || w.Warehouse[m] < 25 {
 			continue
 		}
-		if m.Refined() && !a.uni.Chartered(w.System, t.System) && w.System != t.System {
+		if m.Refined() && m != econ.Steel && !a.uni.Chartered(w.System, t.System) && w.System != t.System {
 			continue
 		}
 		if p := t.Shop[m]; p > bestP {

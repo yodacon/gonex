@@ -69,7 +69,7 @@ func (u *Universe) FindRoutes(c govt.Color, limit int) []Route {
 				// shuttles, and cross a jump only on a chartered lane. That
 				// is OpenFront's port-to-port and factory-to-factory, in a
 				// map whose roads are jump links.
-				if m.Refined() && !u.shuttleLink(src, dst) {
+				if shuttleOnly(m) && !u.shuttleLink(src, dst) {
 					continue
 				}
 				// Only the surplus is for sale. A port does not sell the
@@ -175,6 +175,12 @@ func (u *Universe) flyFleet() {
 // warehouse the moment it is assigned — it is on the pad, it is bought and
 // paid for, and it is no longer the seller's.
 func (u *Universe) dispatch(h *traffic.Hull, routes map[govt.Color][]Route) {
+	// A hull that landed with cargo nobody could pay for carries it on to
+	// the next port that will: a broke world is a real event, but a hold
+	// full of chips parked at it forever is a hull out of the game.
+	if h.Laden() >= minLoad && u.carryOn(h) {
+		return
+	}
 	// A hull sitting somewhere other than home with nothing to carry goes
 	// home; an empty ship in the wrong place is the one thing a trade fleet
 	// must never leave lying around.
@@ -420,3 +426,50 @@ func (u *Universe) leave(h *traffic.Hull, dst *World) {
 // what they can of it, nearest first. Whatever nobody can lift stays there.
 // The census records the loss forever.
 func (u *Universe) Lose(h *traffic.Hull, why string) { u.wreck(h, why) }
+
+// shuttleOnly is the same-type rule's list: the intermediates that ride
+// in-system shuttles and never an interstellar courier. Steel is refined but
+// a city eats it too — structure, and the yards — so it ships like a good.
+func shuttleOnly(m econ.Material) bool { return m.Refined() && m != econ.Steel }
+
+// carryOn sends a laden idle hull to the port that pays most for what it is
+// carrying and can afford it. Nothing is bought; the cargo is already the
+// pilot's. Returns whether it left.
+func (u *Universe) carryOn(h *traffic.Hull) bool {
+	m := econ.Slag
+	for x := econ.Material(0); x < econ.Count; x++ {
+		if h.Cargo[x] > 0 && (m == econ.Slag || h.Cargo[x] > h.Cargo[m]) {
+			m = x
+		}
+	}
+	if m == econ.Slag || m == econ.Rounds {
+		return false // a magazine is not cargo
+	}
+	src := u.Worlds[h.Home]
+	var best *World
+	var bestV float64
+	for _, id := range u.order {
+		dst := u.Worlds[id]
+		if dst.Stellar == h.Home || !u.canTrade(h.Govt, dst.Govt) {
+			continue
+		}
+		if src != nil && shuttleOnly(m) && !u.shuttleLink(src, dst) {
+			continue
+		}
+		price := dst.Shop[m]
+		if price <= 0 || float64(dst.Credits) < float64(price)*h.Cargo[m]/2 {
+			continue
+		}
+		v := float64(price) / math.Max(u.Fleet.Lane(h.Home, id).Length, 1)
+		if best == nil || v > bestV {
+			best, bestV = dst, v
+		}
+	}
+	if best == nil {
+		return false
+	}
+	h.Mission = traffic.Courier
+	u.Journal.Logf(u.Day, h.ID, "%s carries %.0ft %s on to %s", h.Name, h.Cargo[m], m, best.Name)
+	u.Fleet.Depart(h, h.Home, best.Stellar, traffic.Hauling, u.Day)
+	return true
+}

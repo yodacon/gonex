@@ -116,6 +116,11 @@ func (u *Universe) govern() {
 		}
 		// 3b. The focus's investments that are not buildings.
 		u.invest(c)
+		// 3c. Restock: a capital going dry gets a rounds convoy from any
+		// held world that has them. Konquest's planet with a zero kill
+		// percentage is the one thing no government should let happen to
+		// its capital without trying.
+		u.restock(c)
 		// 4. Expansion.
 		u.expand(c)
 	}
@@ -240,3 +245,45 @@ func (u *Universe) Standings() []Standing {
 	})
 	return out
 }
+
+// restock files a rounds convoy to a colour's capital when its magazine is
+// thin, from the held world with the most to spare. It is a standing order
+// like any other, replaced each week it is still needed and left to lapse
+// (the source runs out, or the capital's cover recovers past the threshold
+// and the government cancels it) otherwise.
+func (u *Universe) restock(c govt.Color) {
+	cap := u.Capital(c)
+	if cap == nil {
+		return
+	}
+	cover := cap.Cover(econ.Rounds)
+	if cover < 0 || cover >= restockCoverDays {
+		// Enough: strike any restock order still running.
+		for _, w := range u.worldsOf(c) {
+			for i := len(w.Orders) - 1; i >= 0; i-- {
+				o := w.Orders[i]
+				if o.To == cap.Stellar && o.Mat == econ.Rounds && o.Hulls == 0 {
+					u.Cancel(w.Stellar, i)
+				}
+			}
+		}
+		return
+	}
+	var src *World
+	for _, w := range u.worldsOf(c) {
+		if w == cap || w.Warehouse[econ.Rounds] < minLoad*2 {
+			continue
+		}
+		if src == nil || w.Warehouse[econ.Rounds] > src.Warehouse[econ.Rounds] {
+			src = w
+		}
+	}
+	if src == nil {
+		return
+	}
+	_ = u.File(StandingOrder{From: src.Stellar, To: cap.Stellar, Owner: c, Mat: econ.Rounds, Tons: 40})
+}
+
+// restockCoverDays is the magazine, in days of burn, below which a capital
+// is restocked.
+const restockCoverDays = 30.0

@@ -74,6 +74,11 @@ type World struct {
 	// first building here. The first building is the charter.
 	Seat Seat
 
+	// Mandate names chains this world stands up whatever its rank says —
+	// the arsenal every capital is founded with. A mandated chain still
+	// needs its crust; a capital with no ferrite has no arsenal, and buys.
+	Mandate []string
+
 	// Orders are this world's standing orders: N hulls or N tons, A → B,
 	// every day until cancelled — or until the world changes hands, when
 	// they die with the government that gave them.
@@ -140,7 +145,7 @@ func (w *World) endow(b Building) {
 const (
 	neutralTariff = 0.06
 	colourTariff  = 0.12
-	genesisRounds = 60.0 // tons of Rounds per million citizens at genesis
+	genesisRounds = 90.0 // tons of Rounds per million citizens at genesis
 )
 
 // Genesis is every ton this world was created holding, for opening the books.
@@ -162,9 +167,48 @@ func (w *World) standUpIndustry() {
 	w.Plant = nil
 	ranked := industry.Rank(w.Reserve)
 	slots := maxChains + w.Built[Works]
-	if len(ranked) > slots {
-		ranked = ranked[:slots]
+	// Mandated chains take slots first, in mandate order, if the crust can
+	// back them; the rank fills what is left.
+	var chosen []industry.Chain
+	for _, name := range w.Mandate {
+		if len(chosen) >= slots {
+			break
+		}
+		found := false
+		for _, ch := range ranked {
+			if ch.Name == name {
+				chosen, found = append(chosen, ch), true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+		// No crust for it: stand up the processing stages alone and buy
+		// every input. A capital with no ferrite still has an arsenal — one
+		// that lives on steel and polymer delivered, which is a supply line
+		// somebody can cut. Assemble composes only the processing steps, so
+		// this is the same module a mined chain would run minus the mine.
+		for _, ch := range industry.Chains {
+			if ch.Name == name {
+				chosen = append(chosen, ch)
+				break
+			}
+		}
 	}
+	for _, ch := range ranked {
+		if len(chosen) >= slots {
+			break
+		}
+		dup := false
+		for _, c := range chosen {
+			dup = dup || c.Name == ch.Name
+		}
+		if !dup {
+			chosen = append(chosen, ch)
+		}
+	}
+	ranked = chosen
 	// Throughput scales with population: the city is the workforce, exactly
 	// as the war economy already assumes for industrial points.
 	rate := math.Max(float64(w.Pop), 1) / 1e6 * chainRate
@@ -246,8 +290,8 @@ const (
 	gardenShare        = 0.65 // the share of its own ration a world with soil grows itself
 	popCeiling         = 3.2e7
 	housingPerHabitat  = 0.5
-	luxuryExponent     = 1.2 // rich worlds want more per head; the outer-world gradient
-	garrisonRoundsBurn = 0.3 // tons of Rounds a million citizens' militia fires in drills per day
+	luxuryExponent     = 1.2  // rich worlds want more per head; the outer-world gradient
+	garrisonRoundsBurn = 0.08 // tons of Rounds a million citizens' militia fires in drills per day
 )
 
 // --- The shop ------------------------------------------------------------

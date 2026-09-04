@@ -147,3 +147,44 @@ func TestOrbitDebrisRoundTrips(t *testing.T) {
 		t.Errorf("books after the round trip: %v", bad[0])
 	}
 }
+
+// A capital is founded with an arsenal if its crust allows, and no capital
+// is rated zero after a year — the first year-long runs had all three dry
+// by day 120.
+func TestCapitalsKeepAMagazine(t *testing.T) {
+	u := newTestUniverse(20260903)
+	for _, c := range govt.Colors() {
+		cap := u.Capital(c)
+		has := false
+		for _, p := range cap.Plant {
+			has = has || p.Name == "Munitions"
+		}
+		if !has {
+			t.Errorf("%s capital %s was founded without an arsenal", c, cap.Name)
+		}
+	}
+	for d := 0; d < 365; d++ {
+		u.Tick()
+	}
+	dry := 0
+	for _, c := range govt.Colors() {
+		cap := u.Capital(c)
+		if r := u.Rating(cap); r <= 0 {
+			dry++
+			// Allowed only when the arsenal never had steel to work: a colour
+			// whose map gives it no ferrite and no steel it can buy is dry by
+			// geography, which is the trifecta's "must not be rushed".
+			if u.Journal.Made[econ.Steel] > 0 && cap.Reserve[econ.Ferrite] > 0 {
+				t.Errorf("%s capital %s has ferrite, made steel, and is still rated %.2f after a year", c, cap.Name, r)
+			}
+			t.Logf("%s capital %s dry after a year: %.0ft rounds, %.0ft steel on hand, ferrite %.0ft",
+				c, cap.Name, cap.Warehouse[econ.Rounds], cap.Warehouse[econ.Steel], cap.Reserve[econ.Ferrite])
+		}
+	}
+	if dry > 1 {
+		t.Errorf("%d of 3 capitals dry after a year; at most one may be starved by geography", dry)
+	}
+	if bad := u.Audit(); len(bad) > 0 {
+		t.Errorf("books: %v", bad[0])
+	}
+}
