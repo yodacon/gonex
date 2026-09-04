@@ -35,6 +35,15 @@ func (a *App) registerCommands() {
 		c.Printf("- Health: %d Kills: %d", p.Health, p.Frags)
 	}), "stat")
 
+	c.Register(func(c *console.Console, _ string) {
+		a.Cfg.VectorHUD = !a.Cfg.VectorHUD
+		if a.Cfg.VectorHUD {
+			c.Printf("- Vector HUD ON — forward arc, coast line and thrust curve")
+		} else {
+			c.Printf("- Vector HUD OFF")
+		}
+	}, "vector", "vectorhud", "vhud")
+
 	c.Register(a.withPlayer(func(c *console.Console, _ string, p *world.Ship) {
 		c.Printf("- Location: %0.2f, %0.2f Heading: %0.2f degrees", p.P.X, p.P.Y, p.Heading)
 		c.Printf("- Velocity: %0.2f, %0.2f", p.V.X, p.V.Y)

@@ -156,7 +156,16 @@ func New() (*App, error) {
 	} else if boot != "" {
 		a.newGame("sundaydrive.xml")
 		if id := 0; a.running() {
-			if boot == "fxlab" {
+			if boot == "vector" {
+				// The vector HUD bench: put the player under way with the
+				// nose ACROSS the velocity, which is the only attitude where
+				// the coast line and the thrust curve visibly disagree — and
+				// therefore the only one worth photographing the instrument in.
+				if p := a.World.MainPlayer; p != nil {
+					p.V = gmath.V(190, -120)
+					p.Heading = 55
+				}
+			} else if boot == "fxlab" {
 				// the effects bench: no corridor, every input on a key
 				a.startFxLab()
 			} else if _, err := fmt.Sscanf(boot, "entry %d", &id); err == nil && id > 0 {
@@ -425,6 +434,7 @@ func (a *App) Draw(screen *ebiten.Image) {
 		a.Renderer.DrawWorld(screen, a.World, a.cam)
 		a.Renderer.DrawTargetOverlay(screen, a.World, a.cam)
 		a.drawFlightOverlays(screen)
+		a.drawVectorHUD(screen)
 		a.drawEngPanel(screen)
 	default:
 		a.drawSplash(screen)

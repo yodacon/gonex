@@ -18,6 +18,7 @@ type Config struct {
 	ShowHUD       bool
 	ShowTarget    bool
 	ShowMiniMap   bool
+	VectorHUD     bool // the flying player's forward and thrust vectors
 	PlayerShipID  int
 	ServerAddress string
 	Team          int
@@ -33,6 +34,7 @@ func Default() *Config {
 		ShowHUD:       true,
 		ShowTarget:    true,
 		ShowMiniMap:   true,
+		VectorHUD:     true,
 		PlayerShipID:  12,
 		ServerAddress: "127.0.0.1",
 		Team:          1,
@@ -78,6 +80,8 @@ func Load(path string) *Config {
 			cfg.ShowTarget = v == "1"
 		case "ShowMiniMap":
 			cfg.ShowMiniMap = v == "1"
+		case "VectorHUD":
+			cfg.VectorHUD = v == "1"
 		case "PlayerShipID":
 			cfg.PlayerShipID, _ = strconv.Atoi(v)
 		case "ServerAddress":
@@ -106,6 +110,7 @@ func (c *Config) Save(path string) error {
 		{xml.Name{Local: "ShowHUD"}, b(c.ShowHUD)},
 		{xml.Name{Local: "ShowTarget"}, b(c.ShowTarget)},
 		{xml.Name{Local: "ShowMiniMap"}, b(c.ShowMiniMap)},
+		{xml.Name{Local: "VectorHUD"}, b(c.VectorHUD)},
 		{xml.Name{Local: "PlayerShipID"}, strconv.Itoa(c.PlayerShipID)},
 		{xml.Name{Local: "ServerAddress"}, c.ServerAddress},
 		{xml.Name{Local: "Team"}, strconv.Itoa(c.Team)},

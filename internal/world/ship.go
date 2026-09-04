@@ -461,3 +461,46 @@ func (s *Ship) die(w *World) {
 		s.Grid.HeatMJ = 0
 	}
 }
+
+// Project integrates this ship forward and returns the path it would fly,
+// either coasting or with the drive held at its current heading.
+//
+// It lives HERE, beside Thrust and next to the integrator in World.Update,
+// and not up in the HUD that draws it. A prediction that does not use the
+// simulation's own arithmetic is a decoration with a number on it, and the
+// way that goes wrong is never dramatic — somebody adds drag, or changes the
+// velocity clamp, and a projection two packages away keeps confidently
+// drawing the old physics. Kept in this file, the two are read together and
+// world_test flies a real ship down a projected path to prove they agree.
+func (s *Ship) Project(w *World, secs float64, steps int, thrusting bool) []gmath.Vec2 {
+	if steps < 1 || secs <= 0 {
+		return []gmath.Vec2{s.P}
+	}
+	spec := w.Catalog.Get(s.ShipID)
+	accel := spec.Acceleration
+	if s.ThrustScale > 0 {
+		accel *= s.ThrustScale // the engineering preset's engine share
+	}
+	if s.Kind == KindNPC {
+		accel *= s.served // a browned-out ship is visibly slow
+	}
+	dir := gmath.HeadingVec(s.Heading)
+	dt := secs / float64(steps)
+
+	pos, vel := s.P, s.V
+	out := make([]gmath.Vec2, 0, steps+1)
+	out = append(out, pos)
+	for i := 0; i < steps; i++ {
+		if thrusting {
+			vel = vel.Add(dir.Scale(accel * dt))
+		}
+		// The same clamp World.Update applies, in the same order: velocity
+		// is limited before the step that uses it.
+		if v := vel.Len(); v > spec.MaxVelocity {
+			vel = vel.Norm().Scale(spec.MaxVelocity)
+		}
+		pos = pos.Add(vel.Scale(dt))
+		out = append(out, pos)
+	}
+	return out
+}
