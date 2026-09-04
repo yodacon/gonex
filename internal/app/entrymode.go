@@ -692,6 +692,7 @@ func (a *App) updateEntry() {
 			a.dock = &dockState{stellar: e.stellar}
 			a.mode = modeLanded
 			a.voy.LandAt(e.stellar, a.gal)
+			a.stepUniverse() // the days on the pad move every market
 			a.drainNotices()
 			a.saveGame() // every touchdown writes the berth save DED resumes from
 			a.Console.Notifyf("Berth save written.")
@@ -732,6 +733,7 @@ func (a *App) finishEntry() {
 	case reentry.SkippedOut:
 		a.voy.Fuel -= 50 // re-circularising costs
 		a.voy.passDays(1, a.gal)
+		a.stepUniverse()
 		a.Console.Notifyf("CORRIDOR ABORT — skipped out. Re-entry costs fuel and a day.")
 	case reentry.Destroyed:
 		a.Console.Notifyf("The %s broke up in the plasma over %s.",

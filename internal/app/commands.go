@@ -14,6 +14,8 @@ import (
 func (a *App) registerCommands() {
 	c := a.Console
 
+	a.registerEconomyCommands(c)
+
 	c.Register(func(*console.Console, string) { a.quit() },
 		"quit", "exit", "end", "bye", "close", "q")
 

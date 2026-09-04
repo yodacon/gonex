@@ -151,10 +151,11 @@ func (c *Console) Backspace() {
 
 func (c *Console) Append(chars string) { c.Cmd += chars }
 
-// Execute runs the pending command line.
-func (c *Console) Execute() {
-	line := strings.TrimSpace(c.Cmd)
-	c.lastCmd, c.Cmd = c.Cmd, ""
+// Do runs one command line directly, without going through the input buffer.
+// It is what the GONEX_CMD dev hook drives, and what lets a headless run
+// print the trade journal into a screenshot.
+func (c *Console) Do(line string) {
+	line = strings.TrimSpace(line)
 	if line == "" {
 		return
 	}
@@ -164,4 +165,11 @@ func (c *Console) Execute() {
 		return
 	}
 	c.Printf("Unknown Command (%s)", line)
+}
+
+// Execute runs the pending command line.
+func (c *Console) Execute() {
+	line := strings.TrimSpace(c.Cmd)
+	c.lastCmd, c.Cmd = c.Cmd, ""
+	c.Do(line)
 }

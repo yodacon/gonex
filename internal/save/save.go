@@ -37,7 +37,8 @@ type PilotState struct {
 	Escorts              []int // hired escort ship IDs
 	Crew                 int
 	PlayerShipID         int
-	DockStellar          int // >0: saved on the pad at this stellar
+	DockStellar          int   // >0: saved on the pad at this stellar
+	Seed                 int64 `json:",omitempty"` // the universe seed
 }
 
 // Exists reports whether a save is on disk at path.

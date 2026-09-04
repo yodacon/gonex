@@ -20,6 +20,12 @@ type Voyage struct {
 	Credits int
 	Day     int
 
+	// Seed is the universe's seed, kept on the voyage because the voyage is
+	// what a save persists. Reopening a berth has to reopen the same
+	// universe: the same seams under the same worlds, the same industries on
+	// them, the same hulls carrying the same cargo.
+	Seed int64
+
 	System  int // current system ID
 	Fuel    int // jump fuel units; one leg costs 100
 	FuelMax int
@@ -65,7 +71,7 @@ const (
 func newVoyage(seed int64) *Voyage {
 	veh := reentry.Yodacon()
 	return &Voyage{
-		Credits: 25000, System: homeSystem,
+		Credits: 25000, System: homeSystem, Seed: seed,
 		Fuel: 400, FuelMax: 400,
 		Lithium: veh.LiTank, LiMax: veh.LiTank,
 		RCSFuel: veh.RCSTank, RCSMax: veh.RCSTank,
@@ -186,7 +192,7 @@ func (v *Voyage) RepairCost() int {
 // pilotState snapshots the voyage for the save file.
 func (v *Voyage) pilotState(playerShipID, dockStellar int) *save.PilotState {
 	ps := &save.PilotState{
-		Credits: v.Credits, Day: v.Day, System: v.System,
+		Credits: v.Credits, Day: v.Day, System: v.System, Seed: v.Seed,
 		Fuel: v.Fuel, FuelMax: v.FuelMax,
 		Lithium: v.Lithium, LiMax: v.LiMax,
 		RCSFuel: v.RCSFuel, RCSMax: v.RCSMax,
@@ -208,6 +214,9 @@ func (v *Voyage) pilotState(playerShipID, dockStellar int) *save.PilotState {
 func voyageFrom(ps *save.PilotState, seed int64) *Voyage {
 	v := &Voyage{
 		Credits: ps.Credits, Day: ps.Day, System: ps.System,
+		// A berth saved before the universe existed has no seed on file;
+		// fall back to this session's rather than seeding everything at zero.
+		Seed: firstNonZero(ps.Seed, seed),
 		Fuel: ps.Fuel, FuelMax: ps.FuelMax,
 		Lithium: ps.Lithium, LiMax: ps.LiMax,
 		RCSFuel: ps.RCSFuel, RCSMax: ps.RCSMax,
@@ -233,4 +242,13 @@ func voyageFrom(ps *save.PilotState, seed int64) *Voyage {
 		v.Bits.Set(i)
 	}
 	return v
+}
+
+// firstNonZero is the save format's forgiveness rule, spelled out: an older
+// berth simply does not carry a field, and must load rather than fail.
+func firstNonZero(a, b int64) int64 {
+	if a != 0 {
+		return a
+	}
+	return b
 }

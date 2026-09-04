@@ -29,6 +29,7 @@ import (
 	"yodacon.org/gonex/internal/ship"
 	"yodacon.org/gonex/internal/starfield"
 	"yodacon.org/gonex/internal/ui"
+	"yodacon.org/gonex/internal/universe"
 	"yodacon.org/gonex/internal/world"
 )
 
@@ -67,6 +68,8 @@ type App struct {
 	gal     *galaxy.Galaxy
 	msn     *mission.Table
 	voy     *Voyage
+	uni     *universe.Universe // the economy behind the sky; see economy.go
+	uniDay  int                // the day the economy has been advanced to
 	entry   *entryState
 	dock    *dockState
 	deorbit *deorbitState
@@ -210,6 +213,14 @@ func New() (*App, error) {
 			a.recEvery = n
 		}
 	}
+	// GONEX_CMD runs console commands at boot, semicolon-separated. It is how
+	// a headless run prints the trade journal, and how a screenshot can show
+	// a screen that is normally three keystrokes deep.
+	if cmds := os.Getenv("GONEX_CMD"); cmds != "" {
+		for _, line := range strings.Split(cmds, ";") {
+			a.Console.Do(line)
+		}
+	}
 	a.shotPath = os.Getenv("GONEX_SHOT")
 	a.shotAt = 300
 	if n := 0; os.Getenv("GONEX_SHOT_FRAME") != "" {
@@ -245,6 +256,7 @@ func (a *App) newGame(scenePath string) {
 	a.voy = newVoyage(time.Now().UnixNano())
 	a.wireGrid()
 	a.enterSystem(a.voy.System)
+	a.seedUniverse()
 	a.setGameStatus(true)
 	a.Console.Printf("GAME: Scene loaded successfully %s", scenePath)
 	a.Console.Printf("GAME: Docked traffic control: M chart, J jump, L land near a planet")
@@ -253,6 +265,7 @@ func (a *App) newGame(scenePath string) {
 func (a *App) endGame() {
 	a.World = nil
 	a.voy, a.entry, a.dock, a.deorbit = nil, nil, nil, nil
+	a.uni, a.uniDay = nil, 0
 	a.warp, a.docking, a.takeoff = nil, nil, nil
 	a.mode = modeFlight
 	a.setGameStatus(false)
@@ -298,6 +311,8 @@ func (a *App) loadGame() {
 	}
 	a.wireGrid()
 	a.enterSystem(a.voy.System)
+	a.seedUniverse()
+	a.stepUniverse()
 	a.setGameStatus(true)
 	if pilot != nil && pilot.DockStellar > 0 {
 		a.dock = &dockState{stellar: pilot.DockStellar}

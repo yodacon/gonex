@@ -78,6 +78,7 @@ func (a *App) updateWarp() {
 	}
 	if _, ok := a.voy.Jump(a.gal); ok {
 		a.enterSystem(a.voy.System)
+		a.stepUniverse() // three days in the tunnel is three days of trade
 		// arrive at the inbound beacon: the rim point facing where you came from
 		if p := a.World.MainPlayer; p != nil {
 			cur, prev := a.gal.Systems[a.voy.System], a.gal.Systems[w.from]
