@@ -187,7 +187,7 @@ func (a *App) drainPlanetStock() {
 	}
 	for _, e := range a.World.Entities {
 		pl, ok := e.(*world.Planet)
-		if !ok || pl.StellarID <= 0 || (pl.PlateDraw <= 0 && pl.RoundsDraw <= 0) {
+		if !ok || pl.StellarID <= 0 || (pl.PlateDraw <= 0 && pl.RoundsDraw <= 0 && pl.Scrap <= 0) {
 			continue
 		}
 		uw := a.uni.Worlds[pl.StellarID]
@@ -195,6 +195,10 @@ func (a *App) drainPlanetStock() {
 			pl.PlateDraw, pl.RoundsDraw = 0, 0
 			continue
 		}
+		// Scrap the pads bought off returning squadrons goes to the
+		// warehouse, where the breaker's yard turns it back into steel.
+		uw.Warehouse.Add(econ.Scrap, pl.Scrap)
+		pl.Scrap = 0
 		econ.Consume(&uw.Warehouse, &a.uni.Sink, econ.Ore, pl.PlateDraw)
 		// Rounds handed to a magazine are tons off the shelf. They are
 		// counted as consumed at the pad — a magazine is not a pool the

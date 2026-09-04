@@ -3,6 +3,7 @@ package universe
 import (
 	"fmt"
 	"math"
+	"sort"
 
 	"yodacon.org/gonex/internal/econ"
 	"yodacon.org/gonex/internal/govt"
@@ -125,11 +126,12 @@ func ladder(n int) int {
 
 // Price is what the next level of a building costs at this world.
 func (w *World) Price(b Building) int {
+	bought := func(x Building) int { return w.Built[x] - w.Endowed[x] }
 	switch b {
 	case Spaceport, Works:
-		return ladder(w.Built[Spaceport] + w.Built[Works])
+		return ladder(bought(Spaceport) + bought(Works))
 	case Habitat, Exchange:
-		return ladder(w.Built[Habitat] + w.Built[Exchange])
+		return ladder(bought(Habitat) + bought(Exchange))
 	case Lane:
 		return lanePerHop
 	default:
@@ -241,10 +243,13 @@ func (u *Universe) shuttleLink(a, b *World) bool {
 	return a.System == b.System || u.Chartered(a.System, b.System)
 }
 
+// buildingCount is how many levels have been BOUGHT here. Genesis
+// infrastructure does not count: the charter is the first thing somebody
+// paid for.
 func (w *World) buildingCount() int {
 	n := 0
-	for _, l := range w.Built {
-		n += l
+	for b, l := range w.Built {
+		n += l - w.Endowed[b]
 	}
 	return n
 }
@@ -324,4 +329,98 @@ func (u *Universe) Capital(c govt.Color) *World {
 		}
 	}
 	return best
+}
+
+// --- Doctrine ------------------------------------------------------------
+
+// buildingAxis is the trifecta axis each building serves. A colour's
+// building DOCTRINE — what it stands up first when the exchequer can afford
+// something — is the buildings sorted by the colour's trait on that axis.
+// Nothing here is a dial: change the trifecta and the doctrines follow, and
+// the balance proof in govt still holds.
+var buildingAxis = [BuildingCount]govt.Axis{
+	Spaceport: govt.Logistics, Lane: govt.Logistics,
+	Works:    govt.Extraction,
+	Exchange: govt.Industry,
+	Habitat:  govt.Growth,
+	Bastion:  govt.Shields, Picket: govt.Shields,
+	Silo: govt.Gunnery,
+}
+
+// Doctrine is the order a colour builds in. Red the raider leads with silos
+// and spaceports, Green the grower with habitats and works, Blue the
+// fortress with exchanges and bastions — read straight off the table.
+func Doctrine(c govt.Color) []Building {
+	out := make([]Building, 0, BuildingCount)
+	for b := Building(0); b < BuildingCount; b++ {
+		if b == Lane {
+			continue // lanes are chartered between two worlds, not built at one
+		}
+		out = append(out, b)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		ti, tj := govt.Trait(c, buildingAxis[out[i]]), govt.Trait(c, buildingAxis[out[j]])
+		if ti != tj {
+			return ti > tj
+		}
+		return out[i] < out[j]
+	})
+	return out
+}
+
+// DoctrineName is the colour's building style, in a phrase.
+func DoctrineName(c govt.Color) string {
+	d := Doctrine(c)
+	if len(d) < 2 {
+		return "no doctrine"
+	}
+	switch c {
+	case govt.Red:
+		return fmt.Sprintf("the raider — %s first, then %s", d[0], d[1])
+	case govt.Green:
+		return fmt.Sprintf("the grower — %s first, then %s", d[0], d[1])
+	case govt.Blue:
+		return fmt.Sprintf("the fortress — %s first, then %s", d[0], d[1])
+	}
+	return "unaligned — builds nothing"
+}
+
+// siteFor is where a colour would stand up b: the governor's priority world
+// if one is set and can take it, otherwise the building's natural home — a
+// Works where the richest unbuilt chain is, everything else at the most
+// populous world that can still take another level.
+func (u *Universe) siteFor(c govt.Color, b Building) *World {
+	if p := u.Worlds[u.Priority[c]]; p != nil && p.Govt == c && p.CanBuild(b) == nil {
+		return p
+	}
+	worlds := u.worldsOf(c)
+	if b == Works {
+		return u.bestWorksSite(worlds)
+	}
+	var best *World
+	for _, w := range worlds {
+		if w.Seat == SeatPlayer || w.CanBuild(b) != nil {
+			continue
+		}
+		if best == nil || w.Pop > best.Pop {
+			best = w
+		}
+	}
+	return best
+}
+
+// SetPriority names the world a colour upgrades first. The governor's one
+// lever on the government's spending: not what it buys — that is doctrine —
+// but where.
+func (u *Universe) SetPriority(c govt.Color, stellar int) error {
+	w := u.Worlds[stellar]
+	if w == nil {
+		return fmt.Errorf("no such port")
+	}
+	if w.Govt != c {
+		return fmt.Errorf("%s is not held by %s", w.Name, c)
+	}
+	u.Priority[c] = stellar
+	u.Journal.Logf(u.Day, -1, "%s: %s is the priority for upgrades", c, w.Name)
+	return nil
 }

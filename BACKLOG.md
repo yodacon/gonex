@@ -27,10 +27,12 @@ resources directly** —
       persistent wrecks, Konquest's battle and standing orders, OpenFront's
       buildings, the Governor's Desk (`G` at any dock). Design and status in
       `yodacon/docs/resource-cycle-plan.md`; screen in LR-2026-07.
-- [ ] Balance pass on the full gazetteer: too many hulls deadheading, no
-      exchequer income by day 120, famine curve.
-- [ ] In-sector debris field (war economy M3) so a wreck in the sky you are
-      flying is scooped by ships you can see, not only by the census.
+- [x] In-sector debris field (war economy M3): `world.Debris`, scooped by
+      passing ships and the player, folded back to the census on leaving.
+- [x] Auto-governor: tax, doctrines per colour, priority world, policy and
+      focus; the desk in four tabs; `GONEX_SEED` and `tune`.
+- [ ] Balance pass on the full gazetteer: capitals run out of rounds by day
+      120 (no Munitions chain ranks), hulls still deadhead a lot, famine curve.
 
 - [x] Landing on planets — far beyond the konex stub: landing is now an
       **atmospheric reentry minigame** (`internal/reentry`, the MHD plasma-

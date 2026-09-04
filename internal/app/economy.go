@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"math"
 
 	"yodacon.org/gonex/internal/city"
 	"yodacon.org/gonex/internal/console"
@@ -87,6 +88,10 @@ func (a *App) seedUniverse() {
 	// places a ton can hide are exactly the two places a player can stand.
 	a.uni.Account(a.playerHold)
 	a.uni.Account(a.residentHolds)
+	a.uni.Account(a.residentDebris)
+	if a.debrisOther == nil {
+		a.debrisOther = map[*world.Debris]econ.Stock{}
+	}
 	// And the player's purse is a purse: everything paid at a counter or a
 	// pad lands in a treasury, and the ledger sees the player's money as one
 	// more place money can be.
@@ -95,6 +100,8 @@ func (a *App) seedUniverse() {
 	a.uni.OnConquer = a.onConquer
 	if a.World != nil {
 		a.World.OnKill = a.loseResident
+		a.World.OnSalvage = a.salvageForPlayer
+		a.World.OnDebrisMerge = a.mergeDebrisLedger
 	}
 	a.syncPlanetStock()
 	// The first enterSystem ran before any of this existed — a new game
@@ -110,22 +117,63 @@ func (a *App) seedUniverse() {
 // currently flying as ships in this sector. While a hull is Resident its
 // cargo is in the world's manifest and NOT in its census row, so this is the
 // only place that mass can be counted from.
+//
+// Junk bays and the pads' scrap yards are Scrap: a ship that lifted a wreck
+// and has not landed yet, and a yard that bought it and has not been drained
+// to the warehouse, both hold tons the auditor must see.
 func (a *App) residentHolds() econ.Stock {
 	var s econ.Stock
 	if a.World == nil {
 		return s
 	}
 	for _, e := range a.World.Entities {
-		sh, ok := e.(*world.Ship)
-		if !ok || sh.HullID < 0 {
-			continue
-		}
-		for i := 0; i < len(sh.Hold) && i < econ.BoardWidth; i++ {
-			s.Add(econ.Material(i), float64(sh.Hold[i]))
+		switch v := e.(type) {
+		case *world.Ship:
+			if v.HullID >= 0 {
+				for i := 0; i < len(v.Hold) && i < econ.BoardWidth; i++ {
+					s.Add(econ.Material(i), float64(v.Hold[i]))
+				}
+			}
+			if v.HullID >= 0 || v == a.World.MainPlayer {
+				s.Add(econ.Scrap, v.Junk)
+			}
+		case *world.Planet:
+			s.Add(econ.Scrap, v.Scrap)
 		}
 	}
 	return s
 }
+
+// sellJunk lands the player's scrap: the port buys it by the ton into its
+// warehouse, where the breaker's yard will make steel of it.
+func (a *App) sellJunk(stellar int) {
+	if a.World == nil || a.World.MainPlayer == nil || a.voy == nil {
+		return
+	}
+	p := a.World.MainPlayer
+	if p.Junk <= 0 {
+		return
+	}
+	uw := a.uniWorld(stellar)
+	if uw == nil {
+		p.Junk = 0
+		return
+	}
+	tons := math.Floor(p.Junk)
+	if tons < 1 {
+		return
+	}
+	price := int(tons) * scrapCr
+	got := a.portPays(stellar, price)
+	sold := float64(got / scrapCr)
+	uw.Warehouse.Add(econ.Scrap, sold)
+	p.Junk -= sold
+	a.Console.Notifyf("The yard takes %.0f t of scrap for %d cr.", sold, got)
+}
+
+// scrapCr is what a port pays per ton of hull scrap — the breaker's margin
+// on it is the steel it becomes.
+const scrapCr = 60
 
 // onConquer moves the flag over a world standing in the sky when the
 // economy above it changes hands — Konquest's fall, drawn.
@@ -211,6 +259,7 @@ func (a *App) registerEconomyCommands(c *console.Console) {
 	}, "economy", "econ", "trade")
 
 	a.registerGovernCommands(c)
+	a.registerPolicyCommands(c)
 
 	c.Register(func(c *console.Console, _ string) {
 		for _, g := range govt.Colors() {

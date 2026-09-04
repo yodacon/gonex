@@ -23,28 +23,29 @@ import (
 // The Governor's Desk: one screen for a world that is a market, a factory
 // and a fortress. See docs/lab-reports/2026-09-04-governor-desk-screen.md.
 //
-// Four regions in the Ares grammar the dock already speaks. THE WORLD is a
-// rail of tanks — population and whether it is fed, the treasury as days of
-// imports, the magazine, Konquest's kill percentage made honest, and the
-// garrison. THE CHART is the mission computer's map with five overlays:
-// typed lanes, a rating badge on every world, hulls in transit with their
-// ETA, wreck fields, and standing orders. THE BOOKS is the full material
-// vector with cover and today's price against base — where a courier makes
-// money selling to you, and what you should be shipping out. THE DESK is the
-// keycaps: build, order, charter, relations, tariff. Every action is a Pay
-// from a named purse, and every number on the screen is one the console can
-// print from the same seed.
+// The first cut put all four regions on one screen and the verdict was that
+// there was too much going on. So the desk is four TABS now, one region
+// each, with the same cursor and the same keycap grammar throughout:
 //
-// The seat is earned: buy the first building at a world and the keycaps go
-// live for it; until then, and everywhere else, the desk is read-only at the
-// resolution your relation to the holder allows.
+//	1 WORLD       the rail of tanks, the works, the buildings, the orders
+//	2 CHART       the mission computer's map with the five overlays, large
+//	3 BOOKS       the full material vector for the world under the cursor
+//	4 GOVERNMENT  the colour's doctrine, policy, priority, standings, seed
+//
+// Every action is a Pay from a named purse, and every number here is one the
+// console can print from the same seed. The seat is earned: the first
+// building bought at a world puts its keycaps live for you, and any seat in
+// a colour is a vote on that colour's policy.
 
 type governState struct {
 	neigh []int // stellar IDs in the neighbourhood, this world first
 	sel   int   // the cursor on neigh
+	tab   int   // 0 world · 1 chart · 2 books · 3 government
 	menu  bool  // the build menu is open
 	msg   string
 }
+
+var governTabs = []string{"WORLD", "CHART", "BOOKS", "GOVERNMENT"}
 
 // openGovern builds the neighbourhood list when the desk is opened.
 func (a *App) openGovern() {
@@ -57,7 +58,6 @@ func (a *App) openGovern() {
 	if here == nil {
 		return
 	}
-	// Systems within two jumps, one BFS.
 	hops := map[int]int{here.System: 0}
 	queue := []int{here.System}
 	for qi := 0; qi < len(queue); qi++ {
@@ -94,10 +94,11 @@ func (a *App) openGovern() {
 		}
 		return wi.Name < wj.Name
 	})
-	d.gov = governState{neigh: neigh}
+	tab := d.gov.tab
+	d.gov = governState{neigh: neigh, tab: tab}
 }
 
-// target is the world under the chart cursor.
+// governTarget is the world under the chart cursor.
 func (a *App) governTarget() *universe.World {
 	d := a.dock
 	if d == nil || len(d.gov.neigh) == 0 {
@@ -124,29 +125,42 @@ func (a *App) updateGovern() {
 	}
 	g := &d.gov
 	n := len(g.neigh)
+	key := inpututil.IsKeyJustPressed
 	switch {
-	case inpututil.IsKeyJustPressed(ebiten.KeyG):
+	case key(ebiten.KeyG):
 		a.dockBack() // Escape and Backspace do the same from the dock loop
-	case inpututil.IsKeyJustPressed(ebiten.KeyJ):
+	case key(ebiten.KeyJ):
 		d.view = dockJournal
-	case n > 0 && (inpututil.IsKeyJustPressed(ebiten.KeyRight) || inpututil.IsKeyJustPressed(ebiten.KeyDown)):
+	case key(ebiten.KeyTab):
+		g.tab = (g.tab + 1) % len(governTabs)
+		g.menu = false
+	case !g.menu && key(ebiten.KeyDigit1):
+		g.tab = 0
+	case !g.menu && key(ebiten.KeyDigit2):
+		g.tab = 1
+	case !g.menu && key(ebiten.KeyDigit3):
+		g.tab = 2
+	case !g.menu && key(ebiten.KeyDigit4):
+		g.tab = 3
+	case n > 0 && (key(ebiten.KeyRight) || key(ebiten.KeyDown)):
 		g.sel = (g.sel + 1) % n
-	case n > 0 && (inpututil.IsKeyJustPressed(ebiten.KeyLeft) || inpututil.IsKeyJustPressed(ebiten.KeyUp)):
+	case n > 0 && (key(ebiten.KeyLeft) || key(ebiten.KeyUp)):
 		g.sel = (g.sel + n - 1) % n
-	case inpututil.IsKeyJustPressed(ebiten.KeyB):
+	case key(ebiten.KeyB):
 		g.menu = !g.menu
+		g.tab = 0
 	case g.menu:
 		for b := universe.Building(0); b < universe.BuildingCount; b++ {
-			if inpututil.IsKeyJustPressed(ebiten.KeyDigit1 + ebiten.Key(b)) {
+			if key(ebiten.KeyDigit1 + ebiten.Key(b)) {
 				a.govern(func() error { return a.buildHere(here, b) })
 				g.menu = false
 			}
 		}
-	case inpututil.IsKeyJustPressed(ebiten.KeyO):
+	case key(ebiten.KeyO):
 		a.govern(func() error { return a.orderFlight(here) })
-	case inpututil.IsKeyJustPressed(ebiten.KeyC):
+	case key(ebiten.KeyC):
 		a.govern(func() error { return a.orderConvoy(here) })
-	case inpututil.IsKeyJustPressed(ebiten.KeyX):
+	case key(ebiten.KeyX):
 		a.govern(func() error {
 			if !a.seatHeld(here) {
 				return fmt.Errorf("you do not hold the seat at %s", here.Name)
@@ -156,7 +170,7 @@ func (a *App) updateGovern() {
 			}
 			return nil
 		})
-	case inpututil.IsKeyJustPressed(ebiten.KeyL):
+	case key(ebiten.KeyL):
 		a.govern(func() error {
 			t := a.governTarget()
 			if t == nil || t == here {
@@ -167,9 +181,9 @@ func (a *App) updateGovern() {
 			}
 			return a.uni.Charter(here, t, &a.voy.Credits, universe.SeatPlayer)
 		})
-	case inpututil.IsKeyJustPressed(ebiten.KeyR):
+	case key(ebiten.KeyR):
 		a.govern(func() error { return a.cycleRelation(here) })
-	case inpututil.IsKeyJustPressed(ebiten.KeyT):
+	case key(ebiten.KeyT):
 		a.govern(func() error {
 			if !a.seatHeld(here) {
 				return fmt.Errorf("you do not hold the seat at %s", here.Name)
@@ -183,6 +197,41 @@ func (a *App) updateGovern() {
 			}
 			here.Tariff = steps[i]
 			g.msg = fmt.Sprintf("%s now takes %.0f%% on non-allied sales.", here.Name, here.Tariff*100)
+			return nil
+		})
+	case key(ebiten.KeyP):
+		a.govern(func() error {
+			if !a.holdsASeat(here.Govt) {
+				return fmt.Errorf("you hold no seat in %s; buy a building first", here.Govt)
+			}
+			if err := a.uni.SetPriority(here.Govt, here.Stellar); err != nil {
+				return err
+			}
+			g.msg = fmt.Sprintf("%s is now %s's priority for upgrades.", here.Name, here.Govt)
+			return nil
+		})
+	case key(ebiten.KeyA):
+		a.govern(func() error {
+			c := here.Govt
+			if !a.holdsASeat(c) {
+				return fmt.Errorf("you hold no seat in %s; buy a building first", c)
+			}
+			p := a.uni.Policies[c]
+			p.Auto = !p.Auto
+			a.uni.SetPolicy(c, p)
+			g.msg = fmt.Sprintf("%s: %s.", c, p)
+			return nil
+		})
+	case key(ebiten.KeyF):
+		a.govern(func() error {
+			c := here.Govt
+			if !a.holdsASeat(c) {
+				return fmt.Errorf("you hold no seat in %s; buy a building first", c)
+			}
+			p := a.uni.Policies[c]
+			p.Focus = (p.Focus + 1) % universe.FocusCount
+			a.uni.SetPolicy(c, p)
+			g.msg = fmt.Sprintf("%s: %s.", c, p)
 			return nil
 		})
 	}
@@ -204,6 +253,20 @@ func (a *App) govern(f func() error) {
 // seatHeld reports whether the player actually holds this world's seat.
 func (a *App) seatHeld(w *universe.World) bool {
 	return w != nil && w.Seat == universe.SeatPlayer
+}
+
+// holdsASeat reports whether the player holds a seat anywhere in a colour —
+// the ticket to that colour's policy, priority and relations.
+func (a *App) holdsASeat(c govt.Color) bool {
+	if c == govt.None {
+		return false
+	}
+	for _, id := range a.uni.Order() {
+		if w := a.uni.Worlds[id]; w.Govt == c && w.Seat == universe.SeatPlayer {
+			return true
+		}
+	}
+	return false
 }
 
 // buildHere buys the next level of b at w out of the player's purse. The
@@ -284,11 +347,11 @@ func (a *App) orderConvoy(w *universe.World) error {
 	if err := a.uni.File(o); err != nil {
 		return err
 	}
-	a.dock.gov.msg = fmt.Sprintf("40 t of %s a day will run %s → %s.", best, w.Name, t.Name)
+	a.dock.gov.msg = fmt.Sprintf("40 t of %s a day will run %s -> %s.", best, w.Name, t.Name)
 	return nil
 }
 
-// cycleRelation walks war → peace → ally → war with the cursor world's
+// cycleRelation walks war -> peace -> ally -> war with the cursor world's
 // colour. Only from a capital the player holds.
 func (a *App) cycleRelation(w *universe.World) error {
 	if !a.seatHeld(w) {
@@ -330,13 +393,13 @@ func (a *App) drawGovern(screen *ebiten.Image, x, y float64) {
 		return
 	}
 	if a.uni == nil {
-		ui.DrawText(screen, "GOVERNOR'S DESK — no economy behind this sky.", x, y+90, 0.9)
+		ui.DrawText(screen, "GOVERNOR'S DESK - no economy behind this sky.", x, y+90, 0.9)
 		return
 	}
 	a.stepUniverse()
 	here := a.uniWorld(d.stellar)
 	if here == nil {
-		ui.DrawText(screen, "GOVERNOR'S DESK — this port keeps no books.", x, y+90, 0.9)
+		ui.DrawText(screen, "GOVERNOR'S DESK - this port keeps no books.", x, y+90, 0.9)
 		return
 	}
 	if len(d.gov.neigh) == 0 {
@@ -350,22 +413,49 @@ func (a *App) drawGovern(screen *ebiten.Image, x, y float64) {
 	seat := "read only"
 	switch {
 	case here.Seat == universe.SeatPlayer:
-		seat = "YOURS (charter held)"
+		seat = "YOURS"
 	case a.seatFor(here):
-		seat = "open (the first building is the charter)"
+		seat = "open: the first building is the charter"
 	}
-	ui.DrawText(screen, fmt.Sprintf("GOVERNOR'S DESK - %s / %s / seat: %s", here.Name, here.Govt.Name(), seat), x, y+90, 1)
-	ui.DrawText(screen, "arrows: cursor   B build  O flight  C convoy  X cancel  L lane  R relations  T tariff  J journal  G/Esc back",
-		x, y+106, 0.6)
+	prio := ""
+	if here.Govt != govt.None && a.uni.Priority[here.Govt] == here.Stellar {
+		prio = " / PRIORITY"
+	}
+	ui.DrawText(screen, fmt.Sprintf("GOVERNOR'S DESK - %s / %s / seat: %s%s", here.Name, here.Govt.Name(), seat, prio), x, y+90, 1)
 
-	a.drawGovernRail(screen, here, x, y+134)
-	a.drawGovernChart(screen, here, target, x+300, y+118, 330, 250)
-	a.drawGovernBooks(screen, target, x, y+268)
-	a.drawGovernWorks(screen, here, x+300, y+378)
-	a.drawGovernDesk(screen, here, x, y+540)
+	// The tab strip: four keycaps, the live one lit.
+	for i, name := range governTabs {
+		ui.Keycap(screen, x+float64(i)*160, y+108, 152, fmt.Sprintf("%d", i+1), name, ui.ToneGray, i == d.gov.tab)
+	}
+	ui.DrawText(screen, "Tab cycles  arrows: cursor", x+650, y+108, 0.6)
+	ui.DrawText(screen, "J journal  G/Esc back", x+650, y+122, 0.6)
+
+	body := y + 146
+	switch d.gov.tab {
+	case 0:
+		a.drawGovernRail(screen, here, x, body+16)
+		a.drawGovernWorks(screen, here, x+340, body)
+		a.drawWorldKeycaps(screen, here, target, x, y+540)
+	case 1:
+		// The right third of the screen is the dock's own furniture (the
+		// hull on the pad, the tank rail), so the chart takes the left and
+		// the neighbourhood runs under it in two columns.
+		a.drawGovernChart(screen, here, target, x, body, 620, 296)
+		a.drawNeighbourhood(screen, here, target, x, body+306)
+		a.drawChartKeycaps(screen, here, target, x, y+540)
+	case 2:
+		a.drawGovernBooks(screen, target, x, body)
+		a.drawBooksKeycaps(screen, x, y+540)
+	case 3:
+		a.drawGovernment(screen, here, x, body)
+		a.drawGovernmentKeycaps(screen, here, target, x, y+540)
+	}
+	a.drawGovernFoot(screen, x, y+606)
 }
 
-// drawGovernRail is THE WORLD: six tanks.
+// --- tab 1: the world ------------------------------------------------------
+
+// drawGovernRail is THE WORLD: six tanks and four lines.
 func (a *App) drawGovernRail(screen *ebiten.Image, w *universe.World, x, y float64) {
 	u := a.uni
 	var maxPop float64 = 1
@@ -385,16 +475,14 @@ func (a *App) drawGovernRail(screen *ebiten.Image, w *universe.World, x, y float
 		days = float64(w.Credits) / bill
 	}
 	rounds := w.Warehouse[econ.Rounds]
-	roundsCover := w.Cover(econ.Rounds)
 	rating := u.Rating(w)
 	garrison := len(u.Garrison(w))
 
-	type tank struct {
+	tanks := []struct {
 		frac       float64
 		c          color.RGBA
 		label, val string
-	}
-	tanks := []tank{
+	}{
 		{float64(w.Pop) / maxPop, color.RGBA{110, 200, 110, 255}, "POP", fmt.Sprintf("%.1fM%s", float64(w.Pop)/1e6, fedArrow)},
 		{math.Min(1, days/60), color.RGBA{206, 196, 122, 255}, "CASH", fmt.Sprintf("%dd", int(math.Min(days, 999)))},
 		{math.Min(1, rounds/500), color.RGBA{255, 190, 96, 255}, "RNDS", fmt.Sprintf("%.0ft", rounds)},
@@ -403,14 +491,33 @@ func (a *App) drawGovernRail(screen *ebiten.Image, w *universe.World, x, y float
 		{math.Min(1, float64(garrison)/8), teamRGBA(w.Govt), "GARR", fmt.Sprintf("%d", garrison)},
 	}
 	for i, t := range tanks {
-		ui.VGauge(screen, x+float64(i)*46, y, 22, 70, t.frac, t.c, t.label, t.val)
+		ui.VGauge(screen, x+float64(i)*50, y, 24, 90, t.frac, t.c, t.label, t.val)
 	}
-	ui.DrawText(screen, fmt.Sprintf("fed %.0f%%  treasury %d cr  rounds cover %s  %d berths",
-		w.Fed()*100, w.Credits, coverText(roundsCover), w.Berths()), x, y+108, 0.65)
+	yy := y + 130
+	lines := []string{
+		fmt.Sprintf("fed %.0f%%   growth: %s", w.Fed()*100, growthWord(w)),
+		fmt.Sprintf("treasury %d cr  (%s of imports)", w.Credits, coverText(days)),
+		fmt.Sprintf("rounds cover %s   berths %d", coverText(w.Cover(econ.Rounds)), w.Berths()),
+		fmt.Sprintf("housing %.1fM   tariff %.0f%%", w.Housing()/1e6, w.Tariff*100),
+	}
+	for _, l := range lines {
+		ui.DrawText(screen, l, x, yy, 0.75)
+		yy += 16
+	}
+}
+
+func growthWord(w *universe.World) string {
+	switch {
+	case w.Fed() >= 0.85:
+		return "growing"
+	case w.Fed() < 0.35:
+		return "SHRINKING"
+	}
+	return "holding on gardens"
 }
 
 // importBillOf is roughly what a world pays a day for the finished goods it
-// does not make: demand (tons a day, read back from cover) times price.
+// does not make: demand (tons a day) times price.
 func importBillOf(w *universe.World) float64 {
 	var bill float64
 	for m := econ.Material(0); m < econ.Count; m++ {
@@ -432,6 +539,123 @@ func coverText(days float64) string {
 	return fmt.Sprintf("%.0fd", days)
 }
 
+// drawGovernWorks is the plant list, the buildings and the standing orders.
+func (a *App) drawGovernWorks(screen *ebiten.Image, w *universe.World, x, y float64) {
+	ui.DrawText(screen, "WORKS", x, y, 0.9)
+	yy := y + 18
+	for _, p := range w.Plant {
+		line := fmt.Sprintf("  %-16s 100%%", trunc(p.Name, 16))
+		tone := float32(0.7)
+		if mat, r := p.Bottleneck(); r < 0.999 {
+			line = fmt.Sprintf("  %-16s %3.0f%% short of %s", trunc(p.Name, 16), r*100, mat)
+			tone = 0.95
+		}
+		ui.DrawText(screen, line, x, yy, tone)
+		yy += 15
+	}
+	if len(w.Plant) == 0 {
+		ui.DrawText(screen, "  no industry", x, yy, 0.6)
+		yy += 15
+	}
+	yy += 8
+	ui.DrawText(screen, "BUILT", x, yy, 0.9)
+	yy += 18
+	any := false
+	for b := universe.Building(0); b < universe.BuildingCount; b++ {
+		if w.Built[b] > 0 {
+			tag := ""
+			switch {
+			case w.Endowed[b] == w.Built[b]:
+				tag = " (genesis)"
+			case w.Endowed[b] > 0:
+				tag = fmt.Sprintf(" (%d genesis, %d bought)", w.Endowed[b], w.Built[b]-w.Endowed[b])
+			}
+			ui.DrawText(screen, fmt.Sprintf("  %-10s level %d%s", b, w.Built[b], tag), x, yy, 0.75)
+			yy += 15
+			any = true
+		}
+	}
+	if !any {
+		ui.DrawText(screen, "  nothing", x, yy, 0.6)
+		yy += 15
+	}
+	yy += 8
+	ui.DrawText(screen, "STANDING ORDERS", x, yy, 0.9)
+	yy += 18
+	if len(w.Orders) == 0 {
+		ui.DrawText(screen, "  none", x, yy, 0.6)
+	}
+	for i, o := range w.Orders {
+		if i >= 5 {
+			break
+		}
+		to := fmt.Sprintf("#%d", o.To)
+		if t := a.uni.Worlds[o.To]; t != nil {
+			to = t.Name
+		}
+		if o.Hulls > 0 {
+			ui.DrawText(screen, fmt.Sprintf("  > %d hulls/day -> %s", o.Hulls, to), x, yy, 0.8)
+		} else {
+			ui.DrawText(screen, fmt.Sprintf("  > %.0ft %s/day -> %s", o.Tons, o.Mat, to), x, yy, 0.8)
+		}
+		yy += 15
+	}
+}
+
+type capSpec struct {
+	key, label string
+	tone       ui.KeyTone
+}
+
+func (a *App) drawCapGrid(screen *ebiten.Image, caps []capSpec, x, y float64) {
+	for i, c := range caps {
+		col, row := i%4, i/4
+		ui.Keycap(screen, x+float64(col)*236, y+float64(row)*30, 226, c.key, c.label, c.tone, c.key == "G")
+	}
+}
+
+func (a *App) drawWorldKeycaps(screen *ebiten.Image, w, t *universe.World, x, y float64) {
+	g := &a.dock.gov
+	live := a.seatHeld(w)
+	tone := func(need bool) ui.KeyTone {
+		if need && !live {
+			return ui.ToneDim
+		}
+		return ui.ToneKhaki
+	}
+	tname := "-"
+	if t != nil {
+		tname = trunc(t.Name, 10)
+	}
+	nextB := fmt.Sprintf("Build: Works %d", w.Price(universe.Works))
+	if g.menu {
+		nextB = "Build: pick 1-8"
+	}
+	caps := []capSpec{
+		{"B", nextB, tone(!a.seatFor(w))},
+		{"O", "Flight > " + tname, tone(true)},
+		{"C", "Convoy > " + tname, tone(true)},
+		{"X", "Cancel orders", tone(true)},
+		{"T", fmt.Sprintf("Tariff %.0f%%", w.Tariff*100), tone(true)},
+		{"P", "Priority here", tone(!a.holdsASeat(w.Govt))},
+		{"J", "Journal", ui.ToneGray},
+		{"G", "Back (Esc)", ui.ToneGreen},
+	}
+	a.drawCapGrid(screen, caps, x, y)
+	if g.menu {
+		yy := y + 66
+		for b := universe.Building(0); b < universe.BuildingCount; b++ {
+			line := fmt.Sprintf("%d. %-10s L%d  %7d cr", int(b)+1, b, w.Built[b], w.Price(b))
+			if err := w.CanBuild(b); err != nil && b != universe.Lane {
+				line += "  - " + trunc(err.Error(), 40)
+			}
+			ui.DrawText(screen, line, x+float64(b%2)*470, yy+float64(b/2)*15, 0.8)
+		}
+	}
+}
+
+// --- tab 2: the chart ------------------------------------------------------
+
 // chartProjector maps a system ID onto a chart rectangle, the same way the
 // mission computer does, so the desk's overlays land on the same stars.
 func (a *App) chartProjector(x0, y0, w, h float64) func(id int) (float32, float32, bool) {
@@ -451,6 +675,10 @@ func (a *App) chartProjector(x0, y0, w, h float64) func(id int) (float32, float3
 	}
 }
 
+// maxBadges is how many rating badges one star carries before the rest are
+// left to the cursor.
+const maxBadges = 4
+
 // drawGovernChart is THE CHART: the mission computer's map with the five
 // overlays — typed lanes, rating badges, hulls in transit, wreck fields and
 // standing orders — and the cursor.
@@ -460,9 +688,6 @@ func (a *App) drawGovernChart(screen *ebiten.Image, here, target *universe.World
 	px := a.chartProjector(x0, y0, w, h)
 	d := a.dock
 
-	// Lanes out of the current system: solid for couriers (every port is a
-	// spaceport), dotted where a charter lets intermediates cross, broken
-	// where war closes it.
 	if s := a.gal.Systems[here.System]; s != nil {
 		hx, hy, ok := px(here.System)
 		if ok {
@@ -481,8 +706,6 @@ func (a *App) drawGovernChart(screen *ebiten.Image, here, target *universe.World
 		}
 	}
 
-	// Rating badges on every world in the neighbourhood, staggered so two
-	// worlds in one system both read.
 	count := map[int]int{}
 	for _, id := range d.gov.neigh {
 		nw := u.Worlds[id]
@@ -493,7 +716,7 @@ func (a *App) drawGovernChart(screen *ebiten.Image, here, target *universe.World
 		k := count[nw.System]
 		count[nw.System]++
 		if k >= maxBadges && nw != target {
-			continue // the dense core: four badges a star, and the cursor's
+			continue
 		}
 		bx := float64(fx) + 8
 		by := float64(fy) + 12 + float64(k)*12
@@ -508,14 +731,12 @@ func (a *App) drawGovernChart(screen *ebiten.Image, here, target *universe.World
 		al := float32(0.75)
 		if nw == target {
 			al = 1
-			vector.StrokeRect(screen, float32(bx-3), float32(by-2), 78, 13, 1, colChrome, false)
+			vector.StrokeRect(screen, float32(bx-3), float32(by-2), 96, 13, 1, colChrome, false)
 		}
-		ui.DrawTextScaled(screen, fmt.Sprintf("%s %.2f %s", mark, u.Rating(nw), trunc(nw.Name, 8)),
+		ui.DrawTextScaled(screen, fmt.Sprintf("%s %.2f %s", mark, u.Rating(nw), trunc(nw.Name, 9)),
 			bx, by, 0.75, c, al)
 	}
 
-	// Hulls in transit on lanes touching the neighbourhood: a marker at the
-	// fraction flown, with an ETA.
 	for _, hh := range u.Fleet.Hulls {
 		if !hh.Status.UnderWay() {
 			continue
@@ -535,7 +756,6 @@ func (a *App) drawGovernChart(screen *ebiten.Image, here, target *universe.World
 		lane := u.Fleet.Lane(hh.From, hh.To)
 		f := float32(math.Min(1, hh.S/math.Max(lane.Length, 1)))
 		if from.System == to.System {
-			// in-system: draw beside the star
 			f = 0.5
 			tx, ty = fx+30, fy-14
 		}
@@ -551,7 +771,6 @@ func (a *App) drawGovernChart(screen *ebiten.Image, here, target *universe.World
 		}
 	}
 
-	// Wreck fields.
 	for _, db := range u.Fleet.Debris {
 		var mx, my float32
 		var ok bool
@@ -582,7 +801,6 @@ func (a *App) drawGovernChart(screen *ebiten.Image, here, target *universe.World
 			color.RGBA{255, 200, 120, 255}, 0.9)
 	}
 
-	// Standing orders from here: a doubled line to the destination.
 	for _, o := range here.Orders {
 		to := u.Worlds[o.To]
 		if to == nil {
@@ -601,10 +819,6 @@ func (a *App) drawGovernChart(screen *ebiten.Image, here, target *universe.World
 		x0+8, y0+h-18, 0.65, color.RGBA{200, 205, 215, 255}, 0.8)
 }
 
-// maxBadges is how many rating badges one star carries before the rest are
-// left to the cursor.
-const maxBadges = 4
-
 func (a *App) inNeigh(stellar int) bool {
 	for _, id := range a.dock.gov.neigh {
 		if id == stellar {
@@ -614,27 +828,84 @@ func (a *App) inNeigh(stellar int) bool {
 	return false
 }
 
+// drawNeighbourhood is the cursor's list: the worlds within two jumps, with
+// rating, holder and population, the selected one lit.
+func (a *App) drawNeighbourhood(screen *ebiten.Image, here, target *universe.World, x, y float64) {
+	ui.DrawText(screen, fmt.Sprintf("NEIGHBOURHOOD %d/%d", a.dock.gov.sel+1, len(a.dock.gov.neigh)), x, y, 0.9)
+	yy := y + 18
+	d := a.dock
+	// Eight entries around the cursor, two columns of four, under the chart:
+	// the ship's own furniture owns the right third of the screen, and the
+	// first cut's list ran straight into the fuel gauges.
+	first := d.gov.sel - 4
+	if first > len(d.gov.neigh)-8 {
+		first = len(d.gov.neigh) - 8
+	}
+	if first < 0 {
+		first = 0
+	}
+	for k, i := 0, first; i < len(d.gov.neigh) && k < 8; i, k = i+1, k+1 {
+		w := a.uni.Worlds[d.gov.neigh[i]]
+		c := teamRGBA(w.Govt)
+		if w.Govt == govt.None {
+			c = color.RGBA{190, 190, 180, 255}
+		}
+		cx := x + float64(k/4)*310
+		cy := yy + float64(k%4)*15
+		al := float32(0.7)
+		if w == target {
+			al = 1
+			vector.DrawFilledRect(screen, float32(cx-6), float32(cy-2), 300, 15,
+				premul(color.RGBA{29, 58, 80, 255}, 0.6), false)
+		}
+		mark := " "
+		if w == here {
+			mark = "*"
+		}
+		ui.DrawTextScaled(screen, fmt.Sprintf("%s%-12s %.2f %4.1fM %s", mark, trunc(w.Name, 12), a.uni.Rating(w),
+			float64(w.Pop)/1e6, trunc(w.Govt.String(), 5)), cx, cy, 1, c, al)
+	}
+}
+
+func (a *App) drawChartKeycaps(screen *ebiten.Image, w, t *universe.World, x, y float64) {
+	live := a.seatHeld(w)
+	tone := func(need bool) ui.KeyTone {
+		if need && !live {
+			return ui.ToneDim
+		}
+		return ui.ToneKhaki
+	}
+	tname := "-"
+	if t != nil {
+		tname = trunc(t.Name, 10)
+	}
+	caps := []capSpec{
+		{"L", "Lane > " + tname, tone(!a.seatFor(w))},
+		{"O", "Flight > " + tname, tone(true)},
+		{"C", "Convoy > " + tname, tone(true)},
+		{"G", "Back (Esc)", ui.ToneGreen},
+	}
+	a.drawCapGrid(screen, caps, x, y)
+}
+
+// --- tab 3: the books ------------------------------------------------------
+
 // drawGovernBooks is THE BOOKS for the world under the cursor: every
-// material with tons, cover and today's price against base.
+// material with tons, demand, cover and today's price against base.
 func (a *App) drawGovernBooks(screen *ebiten.Image, w *universe.World, x, y float64) {
 	u := a.uni
-	who := "THE BOOKS"
-	if w.Stellar != a.dock.stellar {
-		who = fmt.Sprintf("THE BOOKS - %s (%s)", w.Name, w.Govt.Name())
-	}
-	ui.DrawText(screen, who, x, y, 0.9)
-	full := a.resolution(w)
-	if !full {
+	ui.DrawText(screen, fmt.Sprintf("THE BOOKS - %s (%s)   arrows move the cursor to another world", w.Name, w.Govt.Name()), x, y, 0.9)
+	if !a.resolution(w) {
 		ui.DrawText(screen, fmt.Sprintf("  %s shows a stranger only what a ship in orbit could see:", w.Name), x, y+18, 0.65)
 		ui.DrawText(screen, fmt.Sprintf("  pop %.2fM  rated %.2f  %d hulls in orbit", float64(w.Pop)/1e6,
 			u.Rating(w), len(u.Garrison(w))), x, y+34, 0.75)
 		return
 	}
-	ui.DrawText(screen, "  material     tons  cover  vs base", x, y+18, 0.6)
+	ui.DrawText(screen, "  material       tons   t/day  cover   price  vs base    makes", x, y+18, 0.6)
 	yy := y + 34
 	rows := 0
-	for m := econ.Material(0); m < econ.Slag && rows < 14; m++ {
-		if w.Warehouse[m] < 0.5 && w.Cover(m) < 0 {
+	for m := econ.Material(0); m < econ.Slag && rows < 22; m++ {
+		if w.Warehouse[m] < 0.5 && w.Cover(m) < 0 && !w.Makes(m) {
 			continue
 		}
 		base := universe.Base(m)
@@ -644,18 +915,32 @@ func (a *App) drawGovernBooks(screen *ebiten.Image, w *universe.World, x, y floa
 			pct := (float64(w.Shop[m])/base - 1) * 100
 			switch {
 			case pct > 25:
-				delta, tone = fmt.Sprintf("%+4.0f%% SELL", pct), color.RGBA{212, 116, 110, 255} // they pay over base: sell here
+				delta, tone = fmt.Sprintf("%+4.0f%% SELL", pct), color.RGBA{212, 116, 110, 255}
 			case pct < -20:
-				delta, tone = fmt.Sprintf("%+4.0f%% BUY", pct), color.RGBA{140, 240, 140, 255} // under base: buy here
+				delta, tone = fmt.Sprintf("%+4.0f%% BUY", pct), color.RGBA{140, 240, 140, 255}
 			default:
 				delta = fmt.Sprintf("%+4.0f%%", pct)
 			}
 		}
-		ui.DrawTextScaled(screen, fmt.Sprintf("  %-11s %6.0f  %5s  %s", trunc(m.String(), 11),
-			w.Warehouse[m], coverText(w.Cover(m)), delta), x, yy, 1, tone, 0.85)
+		makes := ""
+		if w.Makes(m) {
+			makes = "yes"
+		}
+		ui.DrawTextScaled(screen, fmt.Sprintf("  %-12s %7.0f  %6.1f  %5s  %6d  %-10s %s", trunc(m.String(), 12),
+			w.Warehouse[m], w.Demand(m), coverText(w.Cover(m)), w.Shop[m], delta, makes), x, yy, 1, tone, 0.85)
 		yy += 15
 		rows++
 	}
+}
+
+func (a *App) drawBooksKeycaps(screen *ebiten.Image, x, y float64) {
+	caps := []capSpec{
+		{"1", "World tab", ui.ToneGray},
+		{"2", "Chart tab", ui.ToneGray},
+		{"4", "Government tab", ui.ToneGray},
+		{"G", "Back (Esc)", ui.ToneGreen},
+	}
+	a.drawCapGrid(screen, caps, x, y)
 }
 
 // resolution reports whether the player sees a world's books in full: their
@@ -665,110 +950,124 @@ func (a *App) resolution(w *universe.World) bool {
 	return w.Govt == govt.None || w.Govt == c || a.uni.Relation(c, w.Govt) == universe.Ally
 }
 
-// drawGovernWorks is the plant list, the yard line and the standing orders.
-func (a *App) drawGovernWorks(screen *ebiten.Image, w *universe.World, x, y float64) {
-	ui.DrawText(screen, "WORKS", x, y, 0.9)
-	yy := y + 18
-	for _, p := range w.Plant {
-		line := fmt.Sprintf("  %-16s 100%%", trunc(p.Name, 16))
-		tone := float32(0.7)
-		if mat, r := p.Bottleneck(); r < 0.999 {
-			line = fmt.Sprintf("  %-16s %3.0f%% [%s]", trunc(p.Name, 16), r*100, mat)
-			tone = 0.95
+// --- tab 4: the government ---------------------------------------------
+
+// drawGovernment is the colour's desk: doctrine, policy, priority, the
+// exchequer, the standings, relations, the seed and the knobs.
+func (a *App) drawGovernment(screen *ebiten.Image, here *universe.World, x, y float64) {
+	u := a.uni
+	c := here.Govt
+	yy := y
+	if c == govt.None {
+		ui.DrawText(screen, fmt.Sprintf("%s is unaligned: no government, no doctrine. Take it, or buy its charter.", here.Name), x, yy, 0.85)
+		yy += 30
+	} else {
+		ui.DrawText(screen, fmt.Sprintf("%s (%s): %s", c, c.Name(), universe.DoctrineName(c)), x, yy, 0.95)
+		yy += 18
+		names := []string{}
+		for _, b := range universe.Doctrine(c) {
+			names = append(names, b.String())
 		}
-		ui.DrawText(screen, line, x, yy, tone)
-		yy += 15
-	}
-	if len(w.Plant) == 0 {
-		ui.DrawText(screen, "  no industry", x, yy, 0.6)
-		yy += 15
-	}
-	built := []string{}
-	for b := universe.Building(0); b < universe.BuildingCount; b++ {
-		if w.Built[b] > 0 {
-			built = append(built, fmt.Sprintf("%s %d", b, w.Built[b]))
+		ui.DrawText(screen, "  doctrine: "+strings.Join(names, " > "), x, yy, 0.7)
+		yy += 16
+		plan := []string{}
+		for i, b := range u.Plan(c) {
+			if i >= 4 {
+				break
+			}
+			plan = append(plan, b.String())
 		}
+		ui.DrawText(screen, fmt.Sprintf("  policy:   %s   (this week: %s ...)", u.Policies[c], strings.Join(plan, ", ")), x, yy, 0.8)
+		yy += 16
+		prio := "none: each building goes to its natural home"
+		if p := u.Worlds[u.Priority[c]]; p != nil {
+			prio = p.Name
+		}
+		ui.DrawText(screen, "  priority: "+prio, x, yy, 0.8)
+		yy += 16
+		ui.DrawText(screen, fmt.Sprintf("  exchequer %d cr   reserve %d cr   tax %.0f%% of treasury surplus weekly",
+			u.Exchequer[c], u.Tune.ExchequerReserve, u.Tune.TaxRate*100), x, yy, 0.75)
+		yy += 16
+		seat := "you hold no seat in this colour: buy a building somewhere it holds to vote on its policy"
+		if a.holdsASeat(c) {
+			seat = "you hold a seat: A toggles the auto-governor, F cycles the focus, P sets the priority"
+		}
+		ui.DrawText(screen, "  "+seat, x, yy, 0.65)
+		yy += 26
 	}
-	if len(built) > 0 {
-		ui.DrawText(screen, "  built: "+strings.Join(built, ", "), x, yy, 0.65)
-		yy += 15
+
+	ui.DrawText(screen, "STANDINGS", x, yy, 0.9)
+	yy += 18
+	var maxPop float64 = 1
+	for _, st := range u.Standings() {
+		maxPop = math.Max(maxPop, float64(st.Pop))
+	}
+	for _, st := range u.Standings() {
+		ui.DrawText(screen, fmt.Sprintf("  %-5s %d worlds  pop %5.1fM  %2d hulls  rated %.2f  exch %7d cr  %s",
+			st.Color, st.Worlds, float64(st.Pop)/1e6, st.Hulls, st.Rating, st.Exchequer, u.Policies[st.Color]), x, yy, 0.8)
+		bar := teamRGBA(st.Color)
+		bar.A = 190
+		vector.DrawFilledRect(screen, float32(x+8), float32(yy+14), float32(float64(st.Pop)/maxPop*200), 3, bar, false)
+		yy += 22
 	}
 	yy += 6
-	ui.DrawText(screen, "STANDING ORDERS", x, yy, 0.9)
+	ui.DrawText(screen, "RELATIONS", x, yy, 0.9)
 	yy += 18
-	if len(w.Orders) == 0 {
-		ui.DrawText(screen, "  none", x, yy, 0.6)
+	for _, p := range govt.Colors() {
+		for _, q := range govt.Colors() {
+			if p < q {
+				ui.DrawText(screen, fmt.Sprintf("  %-5s - %-5s %s", p, q, u.Relation(p, q)), x, yy, 0.75)
+				yy += 15
+			}
+		}
 	}
-	for i, o := range w.Orders {
-		if i >= 4 {
-			break
-		}
-		to := fmt.Sprintf("#%d", o.To)
-		if t := a.uni.Worlds[o.To]; t != nil {
-			to = t.Name
-		}
-		if o.Hulls > 0 {
-			ui.DrawText(screen, fmt.Sprintf("  > %d hulls/day -> %s", o.Hulls, to), x, yy, 0.8)
-		} else {
-			ui.DrawText(screen, fmt.Sprintf("  > %.0ft %s/day -> %s", o.Tons, o.Mat, to), x, yy, 0.8)
-		}
-		yy += 15
-	}
+	yy += 8
+	ui.DrawText(screen, fmt.Sprintf("seed %d   day %d", u.Seed, u.Day), x, yy, 0.6)
+	ui.DrawText(screen, "knobs: "+u.Tune.String(), x, yy+14, 0.6)
 }
 
-// drawGovernDesk is the keycaps, the build menu when open, the message, and
-// the two auditors' verdicts.
-func (a *App) drawGovernDesk(screen *ebiten.Image, w *universe.World, x, y float64) {
-	d := a.dock
-	g := &d.gov
-	t := a.governTarget()
-	tname := "-"
-	if t != nil {
-		tname = t.Name
-	}
-	live := a.seatHeld(w)
+func (a *App) drawGovernmentKeycaps(screen *ebiten.Image, w, t *universe.World, x, y float64) {
+	c := w.Govt
+	vote := a.holdsASeat(c)
 	tone := func(need bool) ui.KeyTone {
-		if need && !live {
+		if need && !vote {
 			return ui.ToneDim
 		}
 		return ui.ToneKhaki
 	}
-	nextB := fmt.Sprintf("Build: Works %d", w.Price(universe.Works))
-	if g.menu {
-		nextB = "Build: pick 1-8"
+	auto := "Auto-governor: on"
+	if c != govt.None && !a.uni.Policies[c].Auto {
+		auto = "Auto-governor: off"
 	}
-	caps := []struct {
-		key, label string
-		tone       ui.KeyTone
-	}{
-		{"B", nextB, tone(!a.seatFor(w))},
-		{"O", "Flight > " + trunc(tname, 10), tone(true)},
-		{"C", "Convoy > " + trunc(tname, 10), tone(true)},
-		{"X", "Cancel orders", tone(true)},
-		{"L", "Lane > " + trunc(tname, 10), tone(!a.seatFor(w))},
+	focus := "Focus: -"
+	if c != govt.None {
+		focus = "Focus: " + a.uni.Policies[c].Focus.String()
+	}
+	caps := []capSpec{
+		{"A", auto, tone(true)},
+		{"F", focus, tone(true)},
+		{"P", "Priority: " + trunc(w.Name, 10), tone(true)},
 		{"R", "Rel: " + a.relationLabel(w, t), tone(true)},
-		{"T", fmt.Sprintf("Tariff %.0f%%", w.Tariff*100), tone(true)},
 		{"G", "Back (Esc)", ui.ToneGreen},
 	}
-	for i, c := range caps {
-		col, row := i%4, i/4
-		ui.Keycap(screen, x+float64(col)*236, y+float64(row)*30, 226, c.key, c.label, c.tone, c.key == "G")
+	a.drawCapGrid(screen, caps, x, y)
+}
+
+func (a *App) relationLabel(w, t *universe.World) string {
+	if t == nil || t.Govt == govt.None || t.Govt == w.Govt {
+		return "-"
 	}
-	yy := y + 66
-	if g.menu {
-		for b := universe.Building(0); b < universe.BuildingCount; b++ {
-			line := fmt.Sprintf("%d. %-10s L%d  %7d cr", int(b)+1, b, w.Built[b], w.Price(b))
-			if err := w.CanBuild(b); err != nil && b != universe.Lane {
-				line += "  - " + trunc(err.Error(), 40)
-			}
-			ui.DrawText(screen, line, x+float64(b%2)*470, yy+float64(b/2)*15, 0.8)
-		}
-		yy += 62
-	} else if g.msg != "" {
-		ui.DrawTextScaled(screen, g.msg, x, yy, 1, color.RGBA{255, 244, 180, 255}, 0.95)
-		yy += 18
+	return fmt.Sprintf("%s %s", t.Govt, a.uni.Relation(w.Govt, t.Govt))
+}
+
+// --- the foot ---------------------------------------------------------------
+
+// drawGovernFoot is the message, the wire and the two auditors' verdicts.
+func (a *App) drawGovernFoot(screen *ebiten.Image, x, y float64) {
+	g := &a.dock.gov
+	if g.msg != "" && !g.menu {
+		ui.DrawTextScaled(screen, trunc(g.msg, 110), x, y, 1, color.RGBA{255, 244, 180, 255}, 0.95)
 	}
-	// The verdicts, and the wire.
 	mass, cash := "MASS OK", "CREDITS OK"
 	if bad := a.uni.Audit(); len(bad) > 0 {
 		mass = "MASS BAD " + trunc(bad[0].String(), 40)
@@ -781,14 +1080,7 @@ func (a *App) drawGovernDesk(screen *ebiten.Image, w *universe.World, x, y float
 	if len(tail) > 0 {
 		wire = trunc(tail[len(tail)-1].String(), 70)
 	}
-	ui.DrawText(screen, fmt.Sprintf("%-72s %s  %s", wire, mass, cash), x, y+126, 0.7)
-}
-
-func (a *App) relationLabel(w, t *universe.World) string {
-	if t == nil || t.Govt == govt.None || t.Govt == w.Govt {
-		return "-"
-	}
-	return fmt.Sprintf("%s %s", t.Govt, a.uni.Relation(w.Govt, t.Govt))
+	ui.DrawText(screen, fmt.Sprintf("%-72s %s  %s", wire, mass, cash), x, y+60, 0.7)
 }
 
 // --- the console form ------------------------------------------------------
@@ -1042,4 +1334,121 @@ func (a *App) deskText(w *universe.World) []string {
 		out = append(out, fmt.Sprintf("  next %-10s %7d cr", b, w.Price(b)))
 	}
 	return out
+}
+
+// registerPolicyCommands is the government half of the headless desk:
+// doctrine, priority, policy, the knobs and the seed.
+func (a *App) registerPolicyCommands(c *console.Console) {
+	need := func(c *console.Console) bool {
+		if a.uni == nil {
+			c.Printf("- No universe: start a game first.")
+			return false
+		}
+		a.stepUniverse()
+		return true
+	}
+	worldArg := func(arg string) *universe.World {
+		id := 0
+		if a.dock != nil {
+			id = a.dock.stellar
+		} else if a.World != nil {
+			id = a.nearbyStellar()
+		}
+		fmt.Sscanf(arg, "%d", &id)
+		return a.uni.Worlds[id]
+	}
+
+	c.Register(func(c *console.Console, _ string) {
+		if !need(c) {
+			return
+		}
+		for _, g := range govt.Colors() {
+			names := []string{}
+			for _, b := range universe.Doctrine(g) {
+				names = append(names, b.String())
+			}
+			prio := "none"
+			if p := a.uni.Worlds[a.uni.Priority[g]]; p != nil {
+				prio = p.Name
+			}
+			c.Printf("- %-5s %s", g, universe.DoctrineName(g))
+			c.Printf("  order: %s", strings.Join(names, " > "))
+			c.Printf("  policy: %s · priority: %s · exchequer %d cr", a.uni.Policies[g], prio, a.uni.Exchequer[g])
+		}
+	}, "doctrine", "doctrines")
+
+	// priority [stellar] — that world's colour upgrades it first
+	c.Register(func(c *console.Console, arg string) {
+		if !need(c) {
+			return
+		}
+		w := worldArg(arg)
+		if w == nil {
+			c.Printf("- usage: priority <stellar id>")
+			return
+		}
+		if err := a.uni.SetPriority(w.Govt, w.Stellar); err != nil {
+			c.Printf("- refused: %v", err)
+			return
+		}
+		c.Printf("- %s upgrades %s first.", w.Govt, w.Name)
+	}, "priority")
+
+	// policy <colour> auto|manual [focus]
+	c.Register(func(c *console.Console, arg string) {
+		if !need(c) {
+			return
+		}
+		f := strings.Fields(arg)
+		if len(f) < 2 {
+			c.Printf("- usage: policy <colour> auto|manual [balanced|fleet|lanes|industry|growth|defence|priority]")
+			return
+		}
+		col, ok := govt.Parse(f[0])
+		if !ok || col == govt.None {
+			c.Printf("- policy <red|green|blue> ...")
+			return
+		}
+		p := a.uni.Policies[col]
+		p.Auto = f[1] == "auto"
+		if len(f) > 2 {
+			fo, ok := universe.ParseFocus(f[2])
+			if !ok {
+				c.Printf("- no such focus %q", f[2])
+				return
+			}
+			p.Focus = fo
+		}
+		a.uni.SetPolicy(col, p)
+		c.Printf("- %s: %s", col, p)
+	}, "policy", "focus")
+
+	c.Register(func(c *console.Console, arg string) {
+		if !need(c) {
+			return
+		}
+		f := strings.Fields(arg)
+		if len(f) < 2 {
+			c.Printf("- %s", a.uni.Tune)
+			c.Printf("- usage: tune <purse|tax|reserve|govern|expand|leave> <value>")
+			return
+		}
+		var v float64
+		if _, err := fmt.Sscanf(f[1], "%g", &v); err != nil {
+			c.Printf("- not a number: %q", f[1])
+			return
+		}
+		if err := a.uni.Tune.Set(f[0], v); err != nil {
+			c.Printf("- %v", err)
+			return
+		}
+		c.Printf("- %s", a.uni.Tune)
+	}, "tune")
+
+	c.Register(func(c *console.Console, _ string) {
+		if !need(c) {
+			return
+		}
+		c.Printf("- universe seed %d, day %d. GONEX_SEED=%d reproduces it.", a.uni.Seed, a.uni.Day, a.uni.Seed)
+	}, "seed")
 }

@@ -58,22 +58,24 @@ func (u *Universe) MoneySupply() int {
 
 // --- The government ------------------------------------------------------
 
-// govern is the colour's AI spending its exchequer. It faces the same menu
-// and the same ladder as the player, once a week, and it makes three kinds
+// govern is the colour's AI spending its exchequer, once a week. It faces
+// the same menu and the same ladder as the player, and it makes four kinds
 // of decision:
 //
-//  1. Subsidy: a world whose treasury cannot cover a few days of imports is
+//  1. Tax: every held world remits a share of what its treasury holds above
+//     a few days of imports. That is where an exchequer's money comes from
+//     — tariffs alone left every exchequer at zero for the first hundred
+//     and twenty days, because early deliveries all went to neutrals.
+//  2. Subsidy: a world whose treasury cannot cover a few days of imports is
 //     topped up, so the couriers can still earn there.
-//  2. Placement: a Works goes where the rocks and the neighbours already
-//     agree — the held world with the richest chain its crust can back and
-//     has not yet stood up; a Bastion goes to a capital whose rating has
-//     slipped.
-//  3. Expansion: Konquest's loop. A colour with hulls to spare at its
-//     capital sends a flight at the softest unaligned world it can see.
+//  3. Upgrades, by DOCTRINE and PRIORITY: the first building in the colour's
+//     doctrine it can afford, at the governor's priority world if one is set
+//     and can take it, otherwise at the building's natural home. One a week.
+//  4. Expansion: Konquest's loop; see expand.
 //
 // The trifecta is the only source of colour difference in all of it.
 func (u *Universe) govern() {
-	if u.Day%governEvery != 0 {
+	if u.Day%u.Tune.GovernEvery != 0 {
 		return
 	}
 	for _, c := range govt.Colors() {
@@ -82,34 +84,44 @@ func (u *Universe) govern() {
 		if len(worlds) == 0 {
 			continue
 		}
-		// 1. Subsidy.
+		// 1. Tax.
+		for _, w := range worlds {
+			floor := int(u.importBill(w) * subsidyDays * 2)
+			if surplus := w.Credits - floor; surplus > 0 {
+				econ.Pay(&w.Credits, exch, int(float64(surplus)*u.Tune.TaxRate))
+			}
+		}
+		// 2. Subsidy.
 		for _, w := range worlds {
 			need := int(u.importBill(w) * subsidyDays)
 			if w.Credits < need {
 				econ.Pay(exch, &w.Credits, need-w.Credits)
 			}
 		}
-		// 2. Placement.
-		if best := u.bestWorksSite(worlds); best != nil && *exch >= best.Price(Works)*2 {
-			if err := u.Build(best, Works, exch, SeatAI); err == nil {
+		if !u.Policies[c].Auto {
+			continue // the governor buys by hand; the exchequer waits
+		}
+		// 3. Upgrades, by the week's plan: doctrine, bent by focus.
+		for _, b := range u.plan(c) {
+			site := u.siteFor(c, b)
+			if site == nil {
 				continue
 			}
+			if *exch-site.Price(b) < u.Tune.ExchequerReserve {
+				continue
+			}
+			if err := u.Build(site, b, exch, SeatAI); err == nil {
+				break
+			}
 		}
-		if cap := u.Capital(c); cap != nil && u.Rating(cap) < weakRating && *exch >= cap.Price(Bastion)*2 {
-			_ = u.Build(cap, Bastion, exch, SeatAI)
-		}
-		// 3. Expansion.
+		// 3b. The focus's investments that are not buildings.
+		u.invest(c)
+		// 4. Expansion.
 		u.expand(c)
 	}
 }
 
-const (
-	governEvery = 7
-	subsidyDays = 3.0
-	weakRating  = 0.40
-	// expandEvery is how often a government looks for a world to take.
-	expandEvery = 21
-)
+const subsidyDays = 3.0
 
 // importBill is roughly what a world pays for a day of the finished goods
 // it does not make.
@@ -156,7 +168,7 @@ func (u *Universe) bestWorksSite(worlds []*World) *World {
 // besiege, it takes what is soft and moves on. Capture more worlds, produce
 // more, capture more.
 func (u *Universe) expand(c govt.Color) {
-	if u.Day%expandEvery != 0 {
+	if u.Day%u.Tune.ExpandEvery != 0 {
 		return
 	}
 	cap := u.Capital(c)

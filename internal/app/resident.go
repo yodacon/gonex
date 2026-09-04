@@ -73,6 +73,7 @@ func (a *App) residentsIn(sysID int) {
 		a.materialise(h, anchor)
 		n++
 	}
+	a.materialiseOrbitDebris()
 	a.syncPlanetStock()
 }
 
@@ -162,25 +163,31 @@ func (a *App) releaseResidents() {
 		// and the ship leaves the sky with it
 	}
 	a.World.Entities = live
+	a.foldDebris()
 }
 
-// loseResident is the OnKill hook: a death on this map, entered in the books.
+// loseResident is the OnKill hook: a death on this map, entered in the books
+// as a WRECK IN THE SKY. The ship's cargo and its structure become a pile
+// where it died (world.Debris), drifting on its way, and any ship with room
+// that passes lifts from it. Nothing goes to the sink.
 func (a *App) loseResident(s *world.Ship) {
-	if a.uni == nil {
+	if a.uni == nil || a.World == nil {
 		return
 	}
-	if a.World != nil && s == a.World.MainPlayer {
-		// The player's own hold is scattered too — it is accounted matter
-		// like anybody's, and dying with a full deck has to cost the tonnage
-		// or the wreck is a mint.
+	if s == a.World.MainPlayer {
+		// The player's own deck scatters too — it is accounted matter like
+		// anybody's, and dying with a full deck has to cost the tonnage or
+		// the wreck is a mint. It is a pile now, and the player can go back
+		// for it.
 		if a.voy != nil {
+			mix := append([]int(nil), a.voy.Cargo...)
 			for i := range a.voy.Cargo {
-				if a.voy.Cargo[i] <= 0 {
-					continue
-				}
-				a.uni.Sink.Add(econ.Material(i), float64(a.voy.Cargo[i]))
 				a.voy.Cargo[i] = 0
 			}
+			if total := sumInts(mix); total > 0 {
+				a.World.DropDebris(s.P, s.V, mix, s.Junk, 0)
+			}
+			s.Junk = 0
 		}
 		return
 	}
@@ -191,23 +198,188 @@ func (a *App) loseResident(s *world.Ship) {
 		if h.ID != s.HullID {
 			continue
 		}
-		// The ship's hold is the hull's cargo while it is Resident, so hand
-		// it back before the loss scatters it — otherwise Lose scatters an
-		// empty row and the tonnage on the deck is simply gone.
-		for i := 0; i < len(s.Hold) && i < econ.BoardWidth; i++ {
-			if s.Hold[i] > 0 {
-				h.Cargo.Add(econ.Material(i), float64(s.Hold[i]))
-				s.Hold[i] = 0
-			}
+		// The ship's hold is the board half of the hull's cargo while it is
+		// Resident; the census row still holds the fractions and anything
+		// off the board (a magazine, refined stock). All of it, and the
+		// hull's own tonnage as scrap, goes into one pile.
+		mix := make([]int, world.CommodityCount)
+		for i := 0; i < len(s.Hold) && i < world.CommodityCount; i++ {
+			mix[i], s.Hold[i] = s.Hold[i], 0
 		}
-		a.uni.Lose(h, "destroyed in "+a.sectorName())
+		other := h.Cargo // fractions and off-board materials keep their identity here
+		h.Cargo = econ.Stock{}
+		scrap := h.Dry + s.Junk
+		s.Junk = 0
+		d := a.World.DropDebris(s.P, s.V, mix, scrap, other.Total())
+		a.noteOther(d, other)
+		a.uni.Strike(h, "destroyed in "+a.sectorName())
 		if a.Console != nil {
-			a.Console.Notifyf("%s destroyed — a %s freighter, %s aboard.",
-				h.Name, h.Govt, manifestOf(h))
+			a.Console.Notifyf("%s destroyed — a %s freighter; %.0ft of wreckage adrift.",
+				h.Name, h.Govt, d.Tons())
 		}
 		s.HullID = -1 // the respawned hull is a different vessel
 		return
 	}
+}
+
+func sumInts(xs []int) int {
+	t := 0
+	for _, x := range xs {
+		t += x
+	}
+	return t
+}
+
+// --- the wreck field's books --------------------------------------------
+
+// noteOther records the identity of a pile's off-board tonnage. The ledger
+// is made on first use so a hand-built fixture without seedUniverse works.
+func (a *App) noteOther(d *world.Debris, other econ.Stock) {
+	if a.debrisOther == nil {
+		a.debrisOther = map[*world.Debris]econ.Stock{}
+	}
+	a.debrisOther[d] = a.debrisOther[d].Plus(other)
+}
+
+// residentDebris is every ton adrift in this sector, as a material vector:
+// the board mix, the scrap, and the off-board tonnage whose identity the
+// app keeps in debrisOther. Registered with the universe at seeding.
+func (a *App) residentDebris() econ.Stock {
+	var s econ.Stock
+	if a.World == nil {
+		return s
+	}
+	for _, d := range a.World.Salvage() {
+		s = s.Plus(econ.FromBoard(d.Mix))
+		s.Add(econ.Scrap, d.Scrap)
+		s = s.Plus(a.debrisOther[d])
+	}
+	return s
+}
+
+// mergeDebrisLedger follows the field's own merges: the identity of the
+// off-board tonnage moves with the tons.
+func (a *App) mergeDebrisLedger(into, from *world.Debris) {
+	if a.debrisOther == nil {
+		return
+	}
+	a.debrisOther[into] = a.debrisOther[into].Plus(a.debrisOther[from])
+	delete(a.debrisOther, from)
+}
+
+// salvageForPlayer is OnSalvage: the player's deck lifts cargo by the ton up
+// to the clamps, and scrap into the junk bay, sold at the next pad.
+func (a *App) salvageForPlayer(s *world.Ship, d *world.Debris) {
+	if a.voy == nil {
+		return
+	}
+	free := overstuffCap - a.voy.CargoTotal()
+	got := 0
+	for i := range d.Mix {
+		for d.Mix[i] > 0 && free > 0 && i < len(a.voy.Cargo) {
+			d.Mix[i]--
+			a.voy.Cargo[i]++
+			free--
+			got++
+		}
+	}
+	if d.Scrap > 0 && s.Junk < playerJunkMax {
+		t := math.Min(d.Scrap, playerJunkMax-s.Junk)
+		d.Scrap -= t
+		s.Junk += t
+		got += int(t)
+	}
+	if got > 0 && a.Console != nil {
+		a.Console.Notifyf("Salvage: %d t lifted from the wreck; %.0f t left adrift.", got, d.Tons())
+	}
+}
+
+// playerJunkMax is how much hull scrap the Yodacon's bay will take.
+const playerJunkMax = 40.0
+
+// materialiseOrbitDebris turns the census's orbit piles over this sector's
+// ports into wreckage in the sky, beside the planet they were over.
+func (a *App) materialiseOrbitDebris() {
+	if a.uni == nil || a.World == nil {
+		return
+	}
+	for _, e := range a.World.Entities {
+		pl, ok := e.(*world.Planet)
+		if !ok || pl.StellarID <= 0 {
+			continue
+		}
+		stock := a.uni.LiftOrbit(pl.StellarID)
+		if stock.Total() <= 0 {
+			continue
+		}
+		mix := make([]int, world.CommodityCount)
+		for i := 0; i < world.CommodityCount; i++ {
+			mix[i] = int(math.Floor(stock[econ.Material(i)]))
+			stock[econ.Material(i)] -= float64(mix[i])
+		}
+		scrap := stock.Take(econ.Scrap, stock[econ.Scrap])
+		ang := a.World.Rand.Float64() * 2 * math.Pi
+		r := world.CollisionRange * (3 + 2*a.World.Rand.Float64())
+		at := pl.Pos().Add(gmath.V(math.Cos(ang)*r, math.Sin(ang)*r))
+		d := a.World.DropDebris(at, gmath.Vec2{}, mix, scrap, stock.Total())
+		a.noteOther(d, stock)
+	}
+}
+
+// foldDebris hands every pile in the sky back to the census, in orbit over
+// the nearest port. Called whenever this sky stops being drawn.
+func (a *App) foldDebris() {
+	if a.uni == nil || a.World == nil {
+		return
+	}
+	live := a.World.Entities[:0]
+	for _, e := range a.World.Entities {
+		d, ok := e.(*world.Debris)
+		if !ok {
+			live = append(live, e)
+			continue
+		}
+		if !d.Alive() {
+			delete(a.debrisOther, d)
+			continue
+		}
+		pool := econ.FromBoard(d.Mix)
+		pool.Add(econ.Scrap, d.Scrap)
+		pool = pool.Plus(a.debrisOther[d])
+		delete(a.debrisOther, d)
+		at := a.nearestPortTo(d.P)
+		if at <= 0 {
+			at = a.dockOrHome()
+		}
+		a.uni.DropInOrbit(at, &pool)
+	}
+	a.World.Entities = live
+}
+
+// nearestPortTo is the stellar of the closest port with a census record.
+func (a *App) nearestPortTo(p gmath.Vec2) int {
+	best, bestD := 0, math.MaxFloat64
+	for _, e := range a.World.Entities {
+		pl, ok := e.(*world.Planet)
+		if !ok || pl.StellarID <= 0 || a.uni.Worlds[pl.StellarID] == nil {
+			continue
+		}
+		if d := pl.Pos().Sub(p).Len(); d < bestD {
+			best, bestD = pl.StellarID, d
+		}
+	}
+	return best
+}
+
+// dockOrHome is a fallback port for wreckage with no planet in the sky.
+func (a *App) dockOrHome() int {
+	if a.dock != nil {
+		return a.dock.stellar
+	}
+	if cap := a.uni.Capital(a.playerColour()); cap != nil {
+		return cap.Stellar
+	}
+	return a.uni.Order()[0]
 }
 
 // sectorName is where a loss happened, defensively: a death must never be

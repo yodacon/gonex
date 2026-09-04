@@ -6,6 +6,7 @@ package render
 import (
 	"fmt"
 	"image/color"
+	"math"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
@@ -14,6 +15,7 @@ import (
 	"yodacon.org/gonex/internal/camera"
 	"yodacon.org/gonex/internal/gmath"
 	"yodacon.org/gonex/internal/ship"
+	"yodacon.org/gonex/internal/ui"
 	"yodacon.org/gonex/internal/world"
 )
 
@@ -130,6 +132,8 @@ func (r *Renderer) DrawWorld(dst *ebiten.Image, w *world.World, cam *camera.Came
 		case *world.Missile:
 			vector.DrawFilledRect(dst, float32(sp.X), float32(sp.Y), 4, 4,
 				color.RGBA{192, 192, 192, 192}, false)
+		case *world.Debris:
+			drawDebris(dst, v, sp)
 		case *world.Ship:
 			r.drawShip(dst, v, sp)
 		case *world.Explosion:
@@ -278,5 +282,24 @@ func (r *Renderer) DrawMap(dst *ebiten.Image, w *world.World, x, y, width, heigh
 			c = color.RGBA{96, 96, 96, 255}
 		}
 		vector.DrawFilledRect(dst, px, py, size, size, c, false)
+	}
+}
+
+// drawDebris is a wreck pile: a scatter of plates around the centre, more
+// of them the heavier the pile, and a tonnage figure so a pilot can read
+// whether it is worth the detour.
+func drawDebris(dst *ebiten.Image, d *world.Debris, sp gmath.Vec2) {
+	n := 3 + int(math.Min(9, d.Tons()/60))
+	for i := 0; i < n; i++ {
+		a := float64(i) * 2.399 // golden angle: an even scatter with no pattern
+		r := 4 + float64(i)*2.6
+		x := float32(sp.X + math.Cos(a)*r)
+		y := float32(sp.Y + math.Sin(a)*r)
+		sz := float32(2 + (i % 3))
+		vector.DrawFilledRect(dst, x, y, sz, sz, color.RGBA{150, 150, 140, 220}, false)
+	}
+	if d.Tons() >= 1 {
+		ui.DrawTextScaled(dst, fmt.Sprintf("%.0ft", d.Tons()), sp.X+12, sp.Y-4, 0.7,
+			color.RGBA{200, 190, 150, 255}, 0.8)
 	}
 }

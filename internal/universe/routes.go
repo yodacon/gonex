@@ -226,11 +226,20 @@ func (u *Universe) dispatch(h *traffic.Hull, routes map[govt.Color][]Route) {
 	// port — it deadheads to where the cargo is. Flying empty costs a few
 	// days and earns nothing, which is exactly the pressure that makes a
 	// well-placed berth worth having.
-	for _, r := range list {
-		if r.From != h.Home && affordable(r) >= minLoad {
-			u.Fleet.Depart(h, h.Home, r.From, traffic.Returning, u.Day)
-			return
+	// Nearest origin first, not richest: a deadhead earns nothing, so the
+	// only thing to minimise is how long it takes.
+	var best *Route
+	for i := range list {
+		r := &list[i]
+		if r.From == h.Home || affordable(*r) < minLoad {
+			continue
 		}
+		if best == nil || u.Fleet.Lane(h.Home, r.From).Length < u.Fleet.Lane(h.Home, best.From).Length {
+			best = r
+		}
+	}
+	if best != nil {
+		u.Fleet.Depart(h, h.Home, best.From, traffic.Returning, u.Day)
 	}
 }
 
@@ -362,7 +371,7 @@ func (u *Universe) leave(h *traffic.Hull, dst *World) {
 	if cap := u.Capital(h.Govt); cap != nil && cap.Stellar == dst.Stellar {
 		return
 	}
-	budget := int(float64(h.Purse) * leaveShare)
+	budget := int(float64(h.Purse) * u.Tune.LeaveShare)
 	if budget < 10 {
 		return
 	}
@@ -404,9 +413,6 @@ func (u *Universe) leave(h *traffic.Hull, dst *World) {
 		u.Journal.Logf(u.Day, h.ID, "%s's crew spends %d cr on leave at %s", h.Name, spent, dst.Name)
 	}
 }
-
-// leaveShare is how much of the purse a crew on leave will spend.
-const leaveShare = 0.3
 
 // Lose destroys a hull. Its cargo is NOT scattered into the sink: it drops
 // where the hull died — on the lane, or in orbit over its port — as a wreck

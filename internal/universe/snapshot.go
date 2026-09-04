@@ -23,6 +23,9 @@ type Snapshot struct {
 	Relations []RelationState
 	Charters  [][2]int
 	Exchequer [4]int
+	Priority  [4]int
+	Policies  [4]Policy
+	Tune      Tuning
 	Counters  Counters
 }
 
@@ -35,6 +38,7 @@ type WorldState struct {
 	Reserve   econ.Stock
 	Warehouse econ.Stock
 	Built     [BuildingCount]int
+	Endowed   [BuildingCount]int
 	Tariff    float64
 	Seat      Seat
 	Orders    []StandingOrder
@@ -72,12 +76,13 @@ type Counters struct {
 
 // Snapshot captures the universe.
 func (u *Universe) Snapshot() *Snapshot {
-	s := &Snapshot{Seed: u.Seed, Day: u.Day, Exchequer: u.Exchequer}
+	s := &Snapshot{Seed: u.Seed, Day: u.Day, Exchequer: u.Exchequer, Priority: u.Priority,
+		Policies: u.Policies, Tune: u.Tune}
 	for _, id := range u.order {
 		w := u.Worlds[id]
 		s.Worlds = append(s.Worlds, WorldState{
 			Stellar: w.Stellar, Govt: w.Govt, Pop: w.Pop, Credits: w.Credits,
-			Reserve: w.Reserve, Warehouse: w.Warehouse, Built: w.Built,
+			Reserve: w.Reserve, Warehouse: w.Warehouse, Built: w.Built, Endowed: w.Endowed,
 			Tariff: w.Tariff, Seat: w.Seat, Orders: append([]StandingOrder(nil), w.Orders...),
 			Fed: w.fed,
 		})
@@ -114,6 +119,11 @@ func (u *Universe) Restore(s *Snapshot) {
 	}
 	u.Day = s.Day
 	u.Exchequer = s.Exchequer
+	u.Priority = s.Priority
+	u.Policies = s.Policies
+	if s.Tune.StartPurse > 0 {
+		u.Tune = s.Tune
+	}
 	for _, ws := range s.Worlds {
 		w := u.Worlds[ws.Stellar]
 		if w == nil {
@@ -121,7 +131,7 @@ func (u *Universe) Restore(s *Snapshot) {
 		}
 		w.Govt, w.Pop, w.Credits = ws.Govt, ws.Pop, ws.Credits
 		w.Reserve, w.Warehouse = ws.Reserve, ws.Warehouse
-		w.Built, w.Tariff, w.Seat = ws.Built, ws.Tariff, ws.Seat
+		w.Built, w.Endowed, w.Tariff, w.Seat = ws.Built, ws.Endowed, ws.Tariff, ws.Seat
 		w.Orders = append([]StandingOrder(nil), ws.Orders...)
 		w.fed = ws.Fed
 		w.standUpIndustry()

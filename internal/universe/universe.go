@@ -34,6 +34,13 @@ type Universe struct {
 	Relations map[[2]govt.Color]Relation
 	// Charters are the bought shuttle lanes between systems.
 	Charters map[[2]int]bool
+	// Priority is the world each colour upgrades first, by stellar; 0 for
+	// none. Set by the governor from the desk, honoured by govern().
+	Priority [4]int
+	// Policies is each colour's spending rule; see policy.go.
+	Policies [4]Policy
+	// Tune is the balance knobs; see Tuning.
+	Tune Tuning
 
 	// OnConquer fires when a world changes hands, so whoever draws the sky
 	// can move the flag. This package does not know what is on the other
@@ -76,6 +83,10 @@ func New(seed int64, ports []Port, hullsPer int) *Universe {
 		Rng:       rand.New(rand.NewSource(seed ^ 0x5DEECE66D)),
 		Relations: map[[2]govt.Color]Relation{},
 		Charters:  map[[2]int]bool{},
+		Tune:      DefaultTuning(),
+	}
+	for _, c := range govt.Colors() {
+		u.Policies[c] = DefaultPolicy()
 	}
 	u.Fleet = traffic.NewRegistry(u.Journal)
 	u.Fleet.Name = func(id int) string {
@@ -93,6 +104,20 @@ func New(seed int64, ports []Port, hullsPer int) *Universe {
 		genesis = genesis.Plus(w.Genesis())
 	}
 	sort.Ints(u.order)
+
+	// Minimal infrastructure, the capital's share: a Works, a Bastion and a
+	// Habitat at each colour's most populous world. Built, not bought — the
+	// ladder does not see it — and standing before the books are opened,
+	// because a Bastion's steel is genesis mass like the warehouse's.
+	for _, c := range govt.Colors() {
+		if cap := u.Capital(c); cap != nil {
+			cap.endow(Works)
+			cap.endow(Bastion)
+			cap.endow(Habitat)
+			cap.standUpIndustry()
+			cap.Reprice()
+		}
+	}
 
 	// The fleet is raised BEFORE the books are opened, because a hull's dry
 	// tonnage is Hull material on the books from the first day: it was
@@ -135,19 +160,18 @@ func (u *Universe) raiseFleets(per int) {
 			h.Mass = h.Wet()
 			// A pilot starts on a stake from the home treasury, not on
 			// savings from nowhere: the money exists once.
-			econ.Pay(&home.Credits, &h.Purse, startPurse)
+			econ.Pay(&home.Credits, &h.Purse, u.Tune.StartPurse)
 			u.Fleet.Add(h)
 			id++
 		}
 	}
 }
 
-// startPurse is a courier's opening stake, paid by its home world. It has to
-// cover a real parcel at real prices — a hold of chips runs to tens of
-// thousands — or the whole fleet deadheads from port to port looking for a
-// cargo it can afford, which is exactly what the first cut did for a hundred
-// and twenty days without landing a ton.
-const startPurse = 15000
+// The opening stake (Tuning.StartPurse) has to cover a real parcel at real
+// prices — a hold of chips runs to tens of thousands — or the whole fleet
+// deadheads from port to port looking for a cargo it can afford, which is
+// exactly what the first cut did for a hundred and twenty days without
+// landing a ton.
 
 func (u *Universe) worldsOf(c govt.Color) []*World {
 	var out []*World

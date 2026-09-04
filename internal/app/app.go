@@ -21,6 +21,7 @@ import (
 	"yodacon.org/gonex/internal/camera"
 	"yodacon.org/gonex/internal/config"
 	"yodacon.org/gonex/internal/console"
+	"yodacon.org/gonex/internal/econ"
 	"yodacon.org/gonex/internal/galaxy"
 	"yodacon.org/gonex/internal/gmath"
 	"yodacon.org/gonex/internal/mission"
@@ -65,19 +66,23 @@ type App struct {
 	paused bool
 
 	// the reentry-trader layer
-	mode    appMode
-	gal     *galaxy.Galaxy
-	msn     *mission.Table
-	voy     *Voyage
-	uni     *universe.Universe // the economy behind the sky; see economy.go
-	uniDay  int                // the day the economy has been advanced to
-	entry   *entryState
-	dock    *dockState
-	deorbit *deorbitState
-	warp    *warpState
-	docking *dockingRequest
-	takeoff *takeoffState
-	fxlab   *fxlabState
+	mode   appMode
+	gal    *galaxy.Galaxy
+	msn    *mission.Table
+	voy    *Voyage
+	uni    *universe.Universe // the economy behind the sky; see economy.go
+	uniDay int                // the day the economy has been advanced to
+	// debrisOther keeps the identity of the off-board tonnage in each wreck
+	// pile in the sky — refined stock, munitions, fractions — which the
+	// sector carries only as a number. See resident.go.
+	debrisOther map[*world.Debris]econ.Stock
+	entry       *entryState
+	dock        *dockState
+	deorbit     *deorbitState
+	warp        *warpState
+	docking     *dockingRequest
+	takeoff     *takeoffState
+	fxlab       *fxlabState
 
 	// the engineering layer: one power grid under every mode
 	engPreset engPreset
@@ -201,6 +206,13 @@ func New() (*App, error) {
 				} else if strings.HasSuffix(boot, " govern") {
 					a.dock.view = dockGovern
 					a.openGovern()
+				} else if n := 0; func() bool {
+					_, err := fmt.Sscanf(boot[strings.LastIndex(boot, " ")+1:], "govern%d", &n)
+					return err == nil
+				}() {
+					a.dock.view = dockGovern
+					a.openGovern()
+					a.dock.gov.tab = (n - 1) % len(governTabs)
 				} else if strings.HasSuffix(boot, " outfit") {
 					a.dock.view = dockOutfit
 				} else if strings.HasSuffix(boot, " trade") {
@@ -277,7 +289,7 @@ func (a *App) newGame(scenePath string) {
 
 	a.World = w
 	a.mode = modeFlight
-	a.voy = newVoyage(time.Now().UnixNano())
+	a.voy = newVoyage(gameSeed())
 	a.wireGrid()
 	a.enterSystem(a.voy.System)
 	a.seedUniverse()
@@ -339,7 +351,7 @@ func (a *App) loadGame() {
 		a.Cfg.PlayerShipID = pilot.PlayerShipID
 		a.voy = voyageFrom(pilot, time.Now().UnixNano())
 	} else {
-		a.voy = newVoyage(time.Now().UnixNano())
+		a.voy = newVoyage(gameSeed())
 	}
 	a.wireGrid()
 	a.enterSystem(a.voy.System)
@@ -539,4 +551,17 @@ func (a *App) Layout(_, _ int) (int, int) { return ScreenW, ScreenH }
 // uptime supports the console's uptime command.
 func (a *App) uptime() string {
 	return fmt.Sprintf("- Running for %0.2f second(s)", time.Since(a.started).Seconds())
+}
+
+// gameSeed is the universe seed for a new game: GONEX_SEED if set, so a
+// balance run or a bug can be reproduced exactly, otherwise the clock. The
+// seed is the one input that, with the tuning knobs, makes a universe.
+func gameSeed() int64 {
+	if v := os.Getenv("GONEX_SEED"); v != "" {
+		var n int64
+		if _, err := fmt.Sscanf(v, "%d", &n); err == nil && n != 0 {
+			return n
+		}
+	}
+	return time.Now().UnixNano()
 }

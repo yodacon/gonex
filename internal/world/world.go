@@ -82,6 +82,14 @@ type World struct {
 	// FireGate, when set, is asked before the main player's gun fires — the
 	// app spends capacitor charge there, and a dry bank refuses the shot.
 	FireGate func() bool
+
+	// OnSalvage fires when the main player's ship is over a wreck pile with
+	// something to lift: the voyage's deck is not this ship's hold, so the
+	// app does the lifting. OnDebrisMerge fires when the field's cap folds
+	// two piles into one, so whoever keeps the identity of a pile's Other
+	// tonnage can follow it.
+	OnSalvage     func(*Ship, *Debris)
+	OnDebrisMerge func(into, from *Debris)
 }
 
 func New(catalog *ship.Catalog, seed int64) *World {

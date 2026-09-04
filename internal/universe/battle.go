@@ -352,9 +352,64 @@ func (u *Universe) replaceHulls() {
 			h.Cargo = econ.Stock{}
 			h.V, h.S = 0, 0
 			h.Mass = h.Wet()
-			econ.Pay(&w.Credits, &h.Purse, startPurse/2)
+			econ.Pay(&w.Credits, &h.Purse, u.Tune.StartPurse/2)
 			u.Journal.Logf(u.Day, h.ID, "%s commissioned at %s — %.0ft of hull out of the yard", h.Name, w.Name, h.Dry)
 			break
 		}
 	}
+}
+
+// Strike marks a hull lost whose wreck somebody else is already keeping —
+// the sector the player is flying, where the debris is an entity in the sky
+// and its tons are counted there. The census row goes to Lost; nothing is
+// dropped here, because it was dropped there.
+func (u *Universe) Strike(h *traffic.Hull, why string) {
+	if h.Status == traffic.Lost {
+		return
+	}
+	h.Status = traffic.Lost
+	h.Mission = traffic.Courier
+	h.Cargo = econ.Stock{}
+	h.Mass = 0
+	u.Journal.LostHulls++
+	u.Journal.Logf(u.Day, h.ID, "%s lost — %s", h.Name, why)
+}
+
+// DropInOrbit puts a pool of wreckage in orbit over a port, merging into a
+// field already there. It is how a sector's debris comes back to the census
+// when nobody is drawing that sky any more.
+func (u *Universe) DropInOrbit(stellar int, pool *econ.Stock) *traffic.Debris {
+	var d *traffic.Debris
+	for _, o := range u.Fleet.Debris {
+		if o.InOrbit() && o.At == stellar {
+			d = o
+			break
+		}
+	}
+	if d == nil {
+		d = &traffic.Debris{At: stellar, S: -1, Day: u.Day}
+		u.Fleet.Debris = append(u.Fleet.Debris, d)
+	}
+	for m := econ.Material(0); m < econ.Count; m++ {
+		if pool[m] > 0 {
+			econ.Transfer(pool, &d.Stock, m, pool[m])
+		}
+	}
+	return d
+}
+
+// LiftOrbit takes every ton adrift over a port out of the census, for a
+// sector that is about to draw it as wreckage in the sky.
+func (u *Universe) LiftOrbit(stellar int) econ.Stock {
+	var out econ.Stock
+	live := u.Fleet.Debris[:0]
+	for _, d := range u.Fleet.Debris {
+		if d.InOrbit() && d.At == stellar {
+			out = out.Plus(d.Stock)
+			continue
+		}
+		live = append(live, d)
+	}
+	u.Fleet.Debris = live
+	return out
 }

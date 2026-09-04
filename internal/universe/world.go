@@ -59,7 +59,11 @@ type World struct {
 	Credits int
 
 	// Built is the level of each building standing here; see buildings.go.
-	Built [BuildingCount]int
+	// Endowed is the part of it that was there at genesis — the minimal
+	// infrastructure every inhabited world starts with — and does not count
+	// against the cost ladder: nobody bought it.
+	Built   [BuildingCount]int
+	Endowed [BuildingCount]int
 
 	// Tariff is the rate this port takes on sales by couriers it does not
 	// consider allied. Neutrals open at 6% into their own treasury, the
@@ -117,9 +121,20 @@ func Seed(seed int64, stellar int, name string, system int, pop int, c govt.Colo
 	// the warehouse — Genesis() counts it — and once it is spent, it is
 	// spent; an arsenal or a courier has to replace it.
 	w.Warehouse.Add(econ.Rounds, math.Round(float64(pop)/1e6*genesisRounds))
+	// Minimal infrastructure: every inhabited world is a port with a pad.
+	// Capitals get more in New, once it is known which worlds they are.
+	if pop > 0 {
+		w.endow(Spaceport)
+	}
 	w.standUpIndustry()
 	w.Reprice()
 	return w
+}
+
+// endow stands a building up at genesis: built, but not bought.
+func (w *World) endow(b Building) {
+	w.Built[b]++
+	w.Endowed[b]++
 }
 
 const (

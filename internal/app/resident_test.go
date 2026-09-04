@@ -34,7 +34,10 @@ func handoverFixture(t *testing.T) (*App, *universe.World) {
 	}, 4)
 	a.uni.Account(a.playerHold)
 	a.uni.Account(a.residentHolds)
+	a.uni.Account(a.residentDebris)
 	w.OnKill = a.loseResident
+	w.OnSalvage = a.salvageForPlayer
+	w.OnDebrisMerge = a.mergeDebrisLedger
 
 	// A planet for the hull to be materialised beside.
 	pl := &world.Planet{StellarID: 133, Name: "ConEx", Team: world.TeamRed}
@@ -155,34 +158,42 @@ func TestKillingAResidentEntersTheBooks(t *testing.T) {
 	if bad := a.uni.Audit(); len(bad) > 0 {
 		t.Errorf("books unbalanced after a resident died: %v", bad[0])
 	}
-	// The wreck's cargo persists: in the field over the port, or in a hold
-	// that scooped it. Never the sink.
-	adrift := a.uni.Fleet.DebrisAfloat()[econ.Ore]
-	var held float64
-	for _, o := range a.uni.Fleet.Hulls {
-		if o.Status != traffic.Lost {
-			held += o.Cargo[econ.Ore]
-		}
-	}
-	if adrift+held < 49 {
-		t.Errorf("only %.1f t of ore adrift and %.1f t in holds; the cargo was lost", adrift, held)
+	// The wreck's cargo persists as a pile IN THIS SKY — a world.Debris the
+	// player can fly to — or in the hold of a ship that already passed it.
+	// Never the sink.
+	sky := a.residentDebris().Plus(a.residentHolds())
+	if sky[econ.Ore] < 49 {
+		t.Errorf("only %.1f t of ore adrift or in holds here; the cargo was lost", sky[econ.Ore])
 	}
 	if a.uni.Sink[econ.Ore] > 0 {
 		t.Errorf("%.1f t of ore went to the sink; a wreck is not a grave", a.uni.Sink[econ.Ore])
 	}
-	if a.uni.Fleet.DebrisAfloat()[econ.Scrap]+heldScrap(a) < h.Dry-1e-6 {
-		t.Errorf("the hull's %.0f t did not become scrap", h.Dry)
+	if sky[econ.Scrap] < h.Dry-1e-6 {
+		t.Errorf("the hull's %.0f t did not become scrap (%.0f t of scrap in the sky)", h.Dry, sky[econ.Scrap])
 	}
-}
+	if len(a.World.Salvage()) == 0 {
+		t.Error("no wreck pile in the sky")
+	}
 
-func heldScrap(a *App) float64 {
-	var t float64
-	for _, o := range a.uni.Fleet.Hulls {
-		if o.Status != traffic.Lost {
-			t += o.Cargo[econ.Scrap]
-		}
+	// Leaving the sector folds the pile back into orbit in the census, and
+	// coming back lifts it into the sky again — conserved both ways.
+	a.releaseResidents()
+	if len(a.World.Salvage()) != 0 {
+		t.Error("piles survived the sky being abandoned")
 	}
-	return t
+	if orbit := a.uni.Fleet.DebrisAfloat(); orbit[econ.Ore] < 49 || orbit[econ.Scrap] < h.Dry-1e-6 {
+		t.Errorf("the census holds %.0f t ore and %.0f t scrap in orbit after fold-back", orbit[econ.Ore], orbit[econ.Scrap])
+	}
+	if bad := a.uni.Audit(); len(bad) > 0 {
+		t.Errorf("books after fold-back: %v", bad[0])
+	}
+	a.residentsIn(133)
+	if len(a.World.Salvage()) == 0 {
+		t.Error("orbit wreckage did not come back into the sky")
+	}
+	if bad := a.uni.Audit(); len(bad) > 0 {
+		t.Errorf("books after re-entry: %v", bad[0])
+	}
 }
 
 // The player's counter has to move real tons. Buying takes them out of a

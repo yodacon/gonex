@@ -49,6 +49,7 @@ type dockState struct {
 	yardSel  int
 	tradeSel int // cursor on the commodity board
 	gov      governState
+	landed   bool // the arrival transactions (junk sale) have run
 }
 
 const (
@@ -300,6 +301,10 @@ func (a *App) updateDock() {
 	if inpututil.IsKeyJustPressed(ebiten.KeyBackspace) && a.dockBack() {
 		a.drainNotices()
 		return
+	}
+	if !d.landed {
+		d.landed = true
+		a.sellJunk(d.stellar) // the yard takes the scrap off the deck first
 	}
 
 	// shore power: on the pad the bus idles, so the reactor's whole surplus
