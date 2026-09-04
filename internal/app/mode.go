@@ -166,10 +166,13 @@ func (a *App) enterSystem(sysID int) {
 		pl, isPlanet := e.(*world.Planet)
 		// Only the LAST SYSTEM'S DRESSING goes: a gazetteer stellar nobody
 		// holds that does not belong to the system being entered. Held worlds
-		// stay because they are somebody's home, and the map's own scenery
-		// (StellarID 0 — the contested ground a scene places by hand) stays
-		// because it is the map.
-		if isPlanet && pl.Team == world.TeamNone && pl.StellarID > 0 && !inSystem[pl.StellarID] {
+		// stay because they are somebody's home, and the map's own furniture
+		// — the contested ground a scene places by hand — stays because it is
+		// the map. That furniture now carries a chartered ID of its own, so
+		// "is this the map?" is a question about where the ID came from, not
+		// about whether the planet has one.
+		if isPlanet && pl.Team == world.TeamNone && pl.StellarID > 0 &&
+			!inSystem[pl.StellarID] && !a.gal.Chartered(pl.StellarID) {
 			continue
 		}
 		if isPlanet && pl.StellarID > 0 {
@@ -196,6 +199,34 @@ func (a *App) enterSystem(sysID int) {
 		pl.Setup(city.PopulationOf(id))
 		a.World.Add(pl)
 	}
+
+	// Every planet in the sky is a port. A world the gazetteer never listed
+	// gets chartered on arrival, and one carrying an ID the gazetteer cannot
+	// answer for — a typo in a map file — gets chartered too, rather than
+	// standing there as a disc that will not take a docking request.
+	chartered := 0
+	for _, e := range a.World.Entities {
+		pl, ok := e.(*world.Planet)
+		if !ok {
+			continue
+		}
+		if a.gal.Chartered(pl.StellarID) {
+			a.gal.Restation(pl.StellarID, sysID)
+			continue
+		}
+		if a.gal.Stellars[pl.StellarID] != nil {
+			continue // a recovered world, listed under its own number
+		}
+		if pl.Name == "" {
+			// A charter is filed under a name, and two nameless rocks must
+			// not file under the same one. Where the map gave no name, the
+			// grid reference is the name.
+			pl.Name = fmt.Sprintf("Site %04d/%04d", int(pl.P.X), int(pl.P.Y))
+		}
+		pl.StellarID = a.gal.Charter(pl.Name, sysID, pl.SpriteID, pl.Pop)
+		chartered++
+	}
+
 	var standing, holdings int
 	for _, e := range a.World.Entities {
 		if pl, ok := e.(*world.Planet); ok {
@@ -207,27 +238,40 @@ func (a *App) enterSystem(sysID int) {
 	}
 	a.Console.Notifyf("Arrived: %s system (%s) — %d stellar(s), %d planet(s), %d held",
 		sys.Name, sys.Govt, len(stellars), standing, holdings)
+	if chartered > 0 {
+		a.Console.Notifyf("Chartered %d port(s) the gazetteer never listed — all %d planet(s) take a docking request.",
+			chartered, standing)
+	}
 }
 
-// nearbyStellar finds a dockable planet within landing range of the player.
-// A planet is dockable only if the gazetteer actually knows its stellar: a
-// scene is data, and a wrong ID in a map file must read as "nothing to dock
-// with", never as a nil Stellar dereferenced three call frames later.
+// nearbyStellar finds the port the player is closest to, within landing
+// range. Arrival charters every planet in the sky, so in practice any disc
+// you can reach will answer a hail; the guard on a resolvable stellar stays
+// because a scene is data, and an ID nothing has answered for must read as
+// "nothing to dock with", never as a nil Stellar dereferenced three call
+// frames later.
+//
+// NEAREST, not first: a map hangs its yards and deep stations a few hundred
+// units off the capital they belong to, which is well inside approach range,
+// so more than one port is often listening. Picking whichever happened to be
+// earlier in the entity list would hail the wrong one from the same spot on
+// two different runs.
 func (a *App) nearbyStellar() int {
 	p := a.World.MainPlayer
 	if p == nil {
 		return 0
 	}
+	best, bestDist := 0, world.CollisionRange*4
 	for _, e := range a.World.Entities {
 		pl, ok := e.(*world.Planet)
 		if !ok || pl.StellarID <= 0 || a.gal.Stellars[pl.StellarID] == nil {
 			continue
 		}
-		if pl.Pos().Sub(p.Pos()).Len() < world.CollisionRange*4 {
-			return pl.StellarID
+		if d := pl.Pos().Sub(p.Pos()).Len(); d < bestDist {
+			best, bestDist = pl.StellarID, d
 		}
 	}
-	return 0
+	return best
 }
 
 // drainNotices moves voyage messages onto the console.
