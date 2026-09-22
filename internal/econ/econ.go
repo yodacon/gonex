@@ -33,6 +33,15 @@ const (
 	Chips
 	FuelCells
 
+	// The fuel tier, and the reason there is a lithium cycle at all. Heavy
+	// lithium is the only thing a hyperdrive will burn, and it comes off the
+	// breeder in two forms that are NOT interchangeable: a clad solid the
+	// thermal reactors take, and a stable molten salt the fast loops take.
+	// Which one a hull can burn is a question about the reactor bolted into
+	// it, which is why the outfitter's shelf is part of the economy.
+	Pellets
+	Melt
+
 	// Refined stock. Nobody posts a price on these; they are what a smelter
 	// hands to a fabricator, and they exist so that industry is a CHAIN
 	// rather than a single magic step from dirt to microchips.
@@ -41,6 +50,27 @@ const (
 	Silicon
 	Polymer
 	Grain
+
+	// The lithium line. Five stages between a rock and a fuel rod, and not
+	// one of them can be skipped:
+	//
+	//	Spodumene --mill--> Lithex --hot cell--> Lithium --breeder--> Heavylith
+	//
+	// Lithex is the milled concentrate — dusty, mildly hot, and the only
+	// stage of the line that ships like a good, because it is what the
+	// hostile worlds IMPORT. Lithium is the pure metal: a ship material in
+	// its own right and the breeder's fertile blanket. Heavylith is the
+	// bred isotope, and it is the single most valuable ton in the game.
+	Lithex
+	Lithium
+	Heavylith
+
+	// The pure chemical liquids. A hull is not only metal: it is the acid
+	// that leached the metal and the fluid in its actuators, and a yard
+	// short of either presses no plate. Acid is also the mill's reagent,
+	// which is what ties the chemical works to the lithium line.
+	Acid
+	Fluid
 
 	// The yard tier. What a fleet is made of, and the reason a high-
 	// population world with steel and chips on hand is dangerous: a hull's
@@ -70,6 +100,12 @@ const (
 	Volatiles
 	Biomass
 
+	// Spodumene is the heavy-lithium ore body, and it is why some worlds
+	// are uninhabitable. The seam IS the radiation: a world's dose rate and
+	// its spodumene reserve are drawn from the same number, so the richest
+	// fuel seams in the universe sit under the worlds nobody can live on.
+	Spodumene
+
 	// The sink. Every ton industry cannot turn into product lands here, and
 	// so does everything consumption burns. Slag is not waste in the sense
 	// of "gone" — it is waste in the sense of "counted, and worthless",
@@ -83,7 +119,7 @@ const (
 // BoardWidth is how many materials have a price on a spaceport's board. It
 // must equal len(market.Commodities) and world.CommodityCount; the app's
 // tests assert all three against each other.
-const BoardWidth = 6
+const BoardWidth = 8
 
 // The tier boundaries.
 const (
@@ -91,17 +127,21 @@ const (
 	FirstYard    = Hull
 	FirstReturn  = Compost
 	FirstCrust   = Ferrite
+	LastCrust    = Spodumene
 )
 
 var names = [Count]string{
 	Lumber: "Lumber", Ore: "Ore", Rations: "Rations",
 	Medicine: "Medicine", Chips: "Chips", FuelCells: "Fuel cells",
+	Pellets: "Pellets", Melt: "Melt",
 	Steel: "Steel", Copper: "Copper", Silicon: "Silicon",
 	Polymer: "Polymer", Grain: "Grain",
+	Lithex: "Lithex", Lithium: "Lithium", Heavylith: "Heavylith",
+	Acid: "Acid", Fluid: "Fluid",
 	Hull: "Hull", Rounds: "Rounds", Missiles: "Missiles",
 	Compost: "Compost", Scrap: "Scrap",
 	Ferrite: "Ferrite", Cuprite: "Cuprite", Silicate: "Silicate",
-	Volatiles: "Volatiles", Biomass: "Biomass",
+	Volatiles: "Volatiles", Biomass: "Biomass", Spodumene: "Spodumene",
 	Slag: "Slag",
 }
 
@@ -117,7 +157,7 @@ func (m Material) Tradeable() bool { return m >= 0 && m < BoardWidth }
 
 // Crust reports whether this material comes out of the ground. Only these
 // are finite; everything else is made from them.
-func (m Material) Crust() bool { return m >= FirstCrust && m <= Biomass }
+func (m Material) Crust() bool { return m >= FirstCrust && m <= LastCrust }
 
 // Refined reports whether this is an intermediate — made from crust, and
 // consumed by a further stage rather than sold. Intermediates move by
@@ -140,6 +180,29 @@ func (m Material) Organic() bool {
 	return false
 }
 
+// Fuel reports whether this is a hyperdrive charge — the two forms heavy
+// lithium is delivered in. They are the same energy in different packaging,
+// and a reactor takes one or the other, never both.
+func (m Material) Fuel() bool { return m == Pellets || m == Melt }
+
+// Hot reports whether a ton has to travel in a shielded cask. Hot material
+// never rides an ordinary courier: it moves in-system, or over a chartered
+// lane, and that restriction is the whole reason the finishing plant stands
+// next to the breeder rather than next to the customer.
+func (m Material) Hot() bool { return m == Lithium || m == Heavylith }
+
+// Bulkable reports whether a refined material nonetheless ships like a good.
+// Steel because a city eats it; Lithex because the hostile worlds IMPORT
+// concentrate and could not run a hot cell otherwise; acid and hydraulic
+// fluid because every yard in the game buys them by the tanker.
+func (m Material) Bulkable() bool {
+	switch m {
+	case Steel, Lithex, Acid, Fluid:
+		return true
+	}
+	return false
+}
+
 // Finished reports whether a spaceport population would buy this for its
 // own use: the board goods plus munitions for the garrison. Intermediates
 // and returns are not finished; a fabricator wants copper, nobody eats it.
@@ -147,8 +210,8 @@ func (m Material) Finished() bool { return m.Tradeable() || m == Rounds || m == 
 
 // Crusts lists the minable materials, in order. Seeding walks this.
 func Crusts() []Material {
-	out := make([]Material, 0, 5)
-	for m := FirstCrust; m <= Biomass; m++ {
+	out := make([]Material, 0, 6)
+	for m := FirstCrust; m <= LastCrust; m++ {
 		out = append(out, m)
 	}
 	return out
@@ -274,6 +337,10 @@ func Parse(s string) (Material, bool) {
 	switch q {
 	case "fuel", "cells", "fuelcells":
 		return FuelCells, true
+	case "li", "heavy", "heavylithium":
+		return Heavylith, true
+	case "pellet":
+		return Pellets, true
 	}
 	return 0, false
 }

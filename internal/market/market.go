@@ -26,6 +26,13 @@ var Commodities = []Commodity{
 	{"Medicine", 480},
 	{"Chips", 640},
 	{"Fuel cells", 300},
+	// The lithium fuels. They are the two most expensive lines on any
+	// board, they are made in only a handful of places in the universe, and
+	// a hull that runs dry of the one its reactor takes is not going
+	// anywhere — which is what makes them the first thing a pilot checks
+	// and the last thing a port runs out of quietly.
+	{"Pellets", 860},
+	{"Melt", 1020},
 }
 
 // Event is one piece of world news moving a price.

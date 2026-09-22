@@ -312,7 +312,12 @@ func (u *Universe) conquer(w *World, flight []*traffic.Hull) {
 // it died, on the books, and the collection rule runs over it at once — the
 // nearest hold with room takes what it can, then the next.
 func (u *Universe) wreck(h *traffic.Hull, why string) {
-	if h.Status == traffic.Lost {
+	// A ship that is not there cannot be destroyed. Lost is obvious; LAID
+	// UP is the one that bites, because a laid-up hull's plate is already
+	// back on a yard's shelf and dropping its dry tonnage as scrap would
+	// put the same tons in the books twice. Five test casualties, three of
+	// which happened to be laid up, minted 1,915 tons between them.
+	if h.Status.Gone() {
 		return
 	}
 	var pool econ.Stock

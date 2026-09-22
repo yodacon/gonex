@@ -389,6 +389,10 @@ func (a *App) startEntry(stellarID int) {
 		// the outfitter's mass comes home to roost: every generator and
 		// battery bought raises the ballistic coefficient right here
 		veh.Mass += a.voy.Grid.OutfitKg
+		// and so does the confinement hardware, which is the point of it:
+		// every rung of the shield ladder is bought with mass on the way
+		// down as well as credits on the pad.
+		veh.Conf = a.voy.Grid.Shield
 	}
 	// so does the hold: every ton on the commodity board rides the
 	// corridor down. RefMass stays at the design figure, so a full (or

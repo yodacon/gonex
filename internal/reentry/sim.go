@@ -21,7 +21,17 @@ type Vehicle struct {
 	LiTank     float64 // kg of lithium aboard at interface
 	RCSTank    float64 // kg of attitude propellant at interface
 	PowerCap   float64 // W the ship can supply to the shield
+
+	// Conf is the confinement hardware fitted beyond the stock coil; see
+	// confinement.go. A stock hull flies with the zero value and behaves
+	// exactly as it always did.
+	Conf Confinement
 }
+
+// CommandedLD is the lift-to-drag the airframe can actually call for in the
+// plasma phase: its own maximum, plus whatever leaning the envelope with a
+// phased array buys on top.
+func (v Vehicle) CommandedLD() float64 { return v.LDMax * (1 + v.Conf.LiftGain()) }
 
 // Yodacon is the ship the whole game flies. Diameter and nose radius are
 // the *inflated envelope*, not the 80 m hull hiding behind it — without the
@@ -194,7 +204,7 @@ func New(veh Vehicle, prof Profile, seed int64) *Sim {
 	s.Gamma = s.RefGamma(s.H) * math.Pi / 180
 	s.prevGamma = s.Gamma
 	s.PadDist = 1600
-	s.Pt = stateAt(s.H, s.V, veh, prof, veh.CoilField, 0)
+	s.Pt = stateAt(s.H, s.V, veh, prof, veh.Conf.Field(veh.CoilField), 0)
 	s.RefG = s.RefGamma(s.H)
 	s.Width = s.CorridorWidth(s.H)
 	return s
@@ -307,7 +317,7 @@ func (s *Sim) Step(dt float64, c Controls) {
 	s.Li -= feed * dt
 	s.FeedUsed = feed
 
-	b := s.Veh.CoilField
+	b := s.Veh.Conf.Field(s.Veh.CoilField)
 	if c.Boost && s.boostTimer <= 0 && s.BoostLeft > 0 {
 		s.BoostLeft--
 		s.boostTimer = 10
@@ -363,7 +373,11 @@ func (s *Sim) Step(dt float64, c Controls) {
 	// the wing-shape coefficient: as the airframe takes over, the
 	// commandable L/D opens up from the cone's 0.35 to the glide ratio
 	grip := math.Max(authority, 0.9*s.AeroAuth)
-	ldMax := s.Veh.LDMax + (s.Veh.GlideLD-s.Veh.LDMax)*math.Min(s.AeroAuth*1.2, 1)
+	// The plasma-phase maximum is the airframe's own plus whatever the
+	// phased array's leaning buys; the aero-phase maximum is the wing's and
+	// the array has nothing to push on down there.
+	plasmaLD := s.Veh.CommandedLD()
+	ldMax := plasmaLD + (s.Veh.GlideLD-plasmaLD)*math.Min(s.AeroAuth*1.2, 1)
 	ld := pitch * ldMax * (0.55 + 0.45*grip) * rcsAuth
 	ldVert := ld * (1 - 0.4*math.Abs(roll))
 	// stability augmentation: the flight computer opposes pitch RATE, so
@@ -477,7 +491,7 @@ func (s *Sim) accrueDamage(dt float64) {
 // the sheath is hot is hull spent instead. The gauge caret between the
 // two is the optimal-consumption line the debrief pays out on.
 func (s *Sim) AdviseFeed(target float64) float64 {
-	b := s.Veh.CoilField
+	b := s.Veh.Conf.Field(s.Veh.CoilField)
 	if s.boostTimer > 0 {
 		b *= 1.8
 	}

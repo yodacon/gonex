@@ -46,53 +46,88 @@ func (r Route) String() string {
 func (u *Universe) FindRoutes(c govt.Color, limit int) []Route {
 	var out []Route
 	for _, fromID := range u.order {
-		src := u.Worlds[fromID]
-		if !u.canTrade(c, src.Govt) {
+		out = u.routesFrom(c, u.Worlds[fromID], out)
+	}
+	u.rankRoutes(c, out)
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out
+}
+
+// RoutesFrom is everything worth lifting out of ONE port today, ranked.
+//
+// It exists because a fleet cannot be dispatched off a global top-N list. A
+// hull only loads a parcel that starts where it is standing, and on a
+// hundred-and-nine-port map the odds that any of the galaxy's twenty best
+// runs happens to begin at this particular berth are negligible — so a hull
+// at a port with a full warehouse and a buyer two jumps away would deadhead
+// away from both. Scanning one origin costs a hundredth of scanning the map,
+// so every idle hull can afford to ask about its own doorstep.
+func (u *Universe) RoutesFrom(c govt.Color, from int, limit int) []Route {
+	src := u.Worlds[from]
+	if src == nil {
+		return nil
+	}
+	out := u.routesFrom(c, src, nil)
+	u.rankRoutes(c, out)
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out
+}
+
+// routesFrom appends every run out of one port that a courier of colour c
+// could take today.
+func (u *Universe) routesFrom(c govt.Color, src *World, out []Route) []Route {
+	if src == nil || !u.canTrade(c, src.Govt) {
+		return out
+	}
+	for _, toID := range u.order {
+		if toID == src.Stellar {
 			continue
 		}
-		for _, toID := range u.order {
-			if toID == fromID {
+		dst := u.Worlds[toID]
+		if !u.canTrade(c, dst.Govt) {
+			continue
+		}
+		for m := econ.Material(0); m < econ.Slag; m++ {
+			buy, sell := src.Shop[m], dst.Shop[m]
+			if buy <= 0 || sell <= buy {
 				continue
 			}
-			dst := u.Worlds[toID]
-			if !u.canTrade(c, dst.Govt) {
+			// The same-type rule. Finished goods ride the interstellar
+			// couriers between any two spaceports. Intermediates —
+			// copper, silicon, polymer, grain — ride in-system shuttles,
+			// and cross a jump only on a chartered lane.
+			if shuttleOnly(m) && !u.shuttleLink(src, dst) {
 				continue
 			}
-			for m := econ.Material(0); m < econ.Slag; m++ {
-				buy, sell := src.Shop[m], dst.Shop[m]
-				if buy <= 0 || sell <= buy {
-					continue
-				}
-				// The same-type rule. Finished goods ride the interstellar
-				// couriers between any two spaceports. Intermediates —
-				// copper, silicon, polymer, grain, steel — ride in-system
-				// shuttles, and cross a jump only on a chartered lane. That
-				// is OpenFront's port-to-port and factory-to-factory, in a
-				// map whose roads are jump links.
-				if shuttleOnly(m) && !u.shuttleLink(src, dst) {
-					continue
-				}
-				// Only the surplus is for sale. A port does not sell the
-				// stock its own factories are about to eat.
-				spare := src.Warehouse[m] - src.Wants(m)*reserveDays
-				if spare < minLoad {
-					continue
-				}
-				// And only genuine demand is worth carrying to.
-				need := dst.Wants(m)*reserveDays + dst.appetite(m)*reserveDays - dst.Warehouse[m]
-				if need < minLoad {
-					continue
-				}
-				lane := u.Fleet.Lane(fromID, toID)
-				out = append(out, Route{
-					Mat: m, From: fromID, To: toID,
-					Buy: buy, Sell: sell, Margin: sell - buy,
-					Tons:   math.Min(spare, need),
-					Length: lane.Length,
-				})
+			// Only the surplus is for sale. A port does not sell the
+			// stock its own factories are about to eat.
+			spare := src.Warehouse[m] - src.Wants(m)*reserveDays
+			if spare < minLoad {
+				continue
 			}
+			// And only genuine demand is worth carrying to.
+			need := dst.Wants(m)*reserveDays + dst.appetite(m)*reserveDays - dst.Warehouse[m]
+			if need < minLoad {
+				continue
+			}
+			lane := u.Fleet.Lane(src.Stellar, toID)
+			out = append(out, Route{
+				Mat: m, From: src.Stellar, To: toID,
+				Buy: buy, Sell: sell, Margin: sell - buy,
+				Tons:   math.Min(spare, need),
+				Length: lane.Length,
+			})
 		}
 	}
+	return out
+}
+
+// rankRoutes sorts a route list best-first, in place.
+func (u *Universe) rankRoutes(c govt.Color, out []Route) {
 	weight := func(r Route) float64 {
 		// Margin per megametre: a fat spread across the galaxy is worth less
 		// than a decent one next door, because the hull could have run the
@@ -116,10 +151,6 @@ func (u *Universe) FindRoutes(c govt.Color, limit int) []Route {
 		}
 		return out[i].Mat < out[j].Mat
 	})
-	if limit > 0 && len(out) > limit {
-		out = out[:limit]
-	}
-	return out
 }
 
 // canTrade reports whether a hull of colour c will dock at a port held by
@@ -150,12 +181,17 @@ func (u *Universe) flyFleet() {
 	// twenty hulls of one colour should not each redo the same scan.
 	routes := map[govt.Color][]Route{}
 	for _, c := range govt.Colors() {
-		routes[c] = u.FindRoutes(c, 24)
+		// The list has to be at least as long as the fleet that will eat
+		// it. A flat cap of 24 meant every hull of a colour chased the same
+		// two dozen parcels and the other four thousand on the board went
+		// uncarried — on a small map that is invisible, on the real one it
+		// is the whole trade network.
+		routes[c] = u.FindRoutes(c, 4*len(u.Fleet.ByGovt(c))+24)
 	}
 
 	for _, h := range u.Fleet.Hulls {
 		switch h.Status {
-		case traffic.Lost, traffic.Resident, traffic.Fighting:
+		case traffic.Lost, traffic.LaidUp, traffic.Resident, traffic.Fighting:
 			continue
 		case traffic.Idle:
 			u.dispatch(h, routes)
@@ -168,6 +204,13 @@ func (u *Universe) flyFleet() {
 				u.arrive(h)
 			}
 		}
+	}
+	// Whatever is still on the list was margin nobody carried. That is the
+	// signal the yards size the fleet from, and it is measured HERE rather
+	// than before dispatch because a board full of parcels that all got
+	// loaded is a board that does not need more ships.
+	for _, c := range govt.Colors() {
+		u.sizeFleet(c, routes[c])
 	}
 }
 
@@ -228,10 +271,20 @@ func (u *Universe) dispatch(h *traffic.Hull, routes map[govt.Color][]Route) {
 		}
 		return
 	}
-	// Nothing to lift here. A trader does not sit on its hands at an empty
-	// port — it deadheads to where the cargo is. Flying empty costs a few
-	// days and earns nothing, which is exactly the pressure that makes a
-	// well-placed berth worth having.
+	// Nothing on the shared list starts here — which on the real map means
+	// almost nothing, since the list is the galaxy's best runs and this is
+	// one berth of a hundred and nine. So ask about this doorstep directly
+	// before giving up on it. A hull standing at a port with a full
+	// warehouse and a buyer two jumps away must not fly away empty, and
+	// before this it did: acid was made at six hundred and seventy tons a
+	// day and carried at sixteen.
+	if u.loadHere(h) {
+		return
+	}
+	// Genuinely nothing to lift here. A trader does not sit on its hands at
+	// an empty port — it deadheads to where the cargo is. Flying empty costs
+	// a few days and earns nothing, which is exactly the pressure that makes
+	// a well-placed berth worth having.
 	// Nearest origin first, not richest: a deadhead earns nothing, so the
 	// only thing to minimise is how long it takes.
 	var best *Route
@@ -249,6 +302,81 @@ func (u *Universe) dispatch(h *traffic.Hull, routes map[govt.Color][]Route) {
 	}
 }
 
+// loadHere scans this hull's own berth for anything worth lifting, and
+// loads the best parcel it can pay for. Returns whether it left.
+func (u *Universe) loadHere(h *traffic.Hull) bool {
+	src := u.Worlds[h.Home]
+	if src == nil {
+		return false
+	}
+	for _, r := range u.RoutesFrom(h.Govt, h.Home, berthScan) {
+		tons := math.Min(math.Min(r.Tons, h.Free()), src.Warehouse[r.Mat])
+		if r.Buy > 0 {
+			tons = math.Min(tons, float64(h.Purse/r.Buy))
+		}
+		if tons < minLoad {
+			continue
+		}
+		got := econ.Transfer(&src.Warehouse, &h.Cargo, r.Mat, tons)
+		if got < minLoad {
+			econ.Transfer(&h.Cargo, &src.Warehouse, r.Mat, got)
+			continue
+		}
+		cost := int(got) * r.Buy
+		econ.Pay(&h.Purse, &src.Credits, cost)
+		h.Bought = cost
+		h.Mission = traffic.Courier
+		h.From, h.To, h.Status = r.From, r.To, traffic.Loading
+		h.Mass = h.Wet()
+		u.Journal.Logf(u.Day, h.ID, "%s loads %.0ft %s at %s for %s (+%d cr)",
+			h.Name, got, r.Mat, src.Name, u.Worlds[r.To].Name, cost)
+		return true
+	}
+	return false
+}
+
+// berthScan is how many of a berth's own runs a pilot will look at before
+// concluding there is nothing here. Small: the list is already ranked, and
+// a pilot who reads the whole board is a pilot who is not flying.
+const berthScan = 8
+
+// ChartLanes registers the true length of every lane in the universe from a
+// hop count over the jump map.
+//
+// Until this existed every lane in the game was the registry's default 260
+// megametres, which meant DISTANCE DID NOT EXIST. The route ranking divides
+// margin by length to prefer a decent run next door over a fat one across
+// the galaxy — and with every length identical that division was a constant,
+// so the geography of the map had no effect on trade whatsoever. A hundred
+// and nine ports were, economically, all in the same place.
+//
+// hops reports the number of jumps between two stellars, or -1 if there is
+// no route. It is supplied by whoever owns the star map, because this
+// package deliberately does not.
+func (u *Universe) ChartLanes(hops func(from, to int) int) {
+	for i, from := range u.order {
+		for _, to := range u.order[i+1:] {
+			n := hops(from, to)
+			if n < 0 {
+				n = unreachableHops // there and back the long way round
+			}
+			u.Fleet.SetLane(from, to, inSystemMm+jumpMm*float64(n))
+		}
+	}
+}
+
+const (
+	// inSystemMm is the run from a jump point to a pad and back — what
+	// every voyage costs before it has crossed anything.
+	inSystemMm = 60.0
+	// jumpMm is one hyperspace link. At a typical cruise it is about seven
+	// days, so a five-jump haul is a month and a decision.
+	jumpMm = 180.0
+	// unreachableHops is what an unroutable pair is charged. Not infinity:
+	// the pair should be the worst run on the board, not an error.
+	unreachableHops = 12
+)
+
 // arrive unloads a hull that has reached the far end of its lane.
 //
 // A flight is the exception: at a hostile world it fights, at a friendly one
@@ -260,8 +388,19 @@ func (u *Universe) arrive(h *traffic.Hull) {
 		h.Status, h.Home = traffic.Idle, h.To
 		return
 	}
-	if h.Mission == traffic.Flight {
+	switch h.Mission {
+	case traffic.Flight:
 		u.arriveFlight(h, dst)
+		return
+	case traffic.Harvester:
+		h.Home, h.From, h.Status = h.To, h.To, traffic.Idle
+		h.V, h.S = 0, 0
+		u.harvest(h, dst)
+		return
+	case traffic.Survey:
+		h.Home, h.From, h.Status = h.To, h.To, traffic.Idle
+		h.V, h.S, h.Mission = 0, 0, traffic.Courier
+		u.recordSurvey(dst)
 		return
 	}
 	var sold float64
@@ -428,9 +567,17 @@ func (u *Universe) leave(h *traffic.Hull, dst *World) {
 func (u *Universe) Lose(h *traffic.Hull, why string) { u.wreck(h, why) }
 
 // shuttleOnly is the same-type rule's list: the intermediates that ride
-// in-system shuttles and never an interstellar courier. Steel is refined but
-// a city eats it too — structure, and the yards — so it ships like a good.
-func shuttleOnly(m econ.Material) bool { return m.Refined() && m != econ.Steel }
+// in-system shuttles and never an interstellar courier.
+//
+// The exceptions are named on the material rather than here, because two
+// quite different arguments produce them. Steel, acid and hydraulic fluid
+// are BULKABLE — a city and a yard eat them, so they ship like goods. Pure
+// lithium and heavylith are the opposite case: they are Hot, and would have
+// been barred from a courier even if everybody wanted them, because a cask
+// that survives a jump costs more than the ton inside it. Either way the
+// answer is the same rule, and the finishing plant ends up beside the
+// breeder instead of beside the customer.
+func shuttleOnly(m econ.Material) bool { return m.Refined() && !m.Bulkable() }
 
 // carryOn sends a laden idle hull to the port that pays most for what it is
 // carrying and can afford it. Nothing is bought; the cargo is already the

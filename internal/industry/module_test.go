@@ -177,7 +177,7 @@ func TestRankFollowsTheCrust(t *testing.T) {
 	var silicaWorld econ.Stock
 	silicaWorld.Add(econ.Silicate, 900000)
 	silicaWorld.Add(econ.Biomass, 1000)
-	if got := Rank(silicaWorld); len(got) == 0 || got[0].Good != econ.Chips {
+	if got := Rank(silicaWorld, 0); len(got) == 0 || got[0].Good != econ.Chips {
 		name := "nothing"
 		if len(got) > 0 {
 			name = got[0].Name
@@ -187,13 +187,13 @@ func TestRankFollowsTheCrust(t *testing.T) {
 
 	var farmWorld econ.Stock
 	farmWorld.Add(econ.Biomass, 900000)
-	if got := Rank(farmWorld); len(got) == 0 || got[0].Needs()[0] != econ.Biomass {
+	if got := Rank(farmWorld, 0); len(got) == 0 || got[0].Needs()[0] != econ.Biomass {
 		t.Error("a biomass world did not rank a biomass industry first")
 	}
 
 	// A barren world runs nothing at all, and must say so rather than
 	// standing up a factory with no feedstock.
-	if got := Rank(econ.Stock{}); len(got) != 0 {
+	if got := Rank(econ.Stock{}, 0); len(got) != 0 {
 		t.Errorf("a barren world ranked %d viable chains", len(got))
 	}
 }

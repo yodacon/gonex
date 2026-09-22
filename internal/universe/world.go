@@ -36,6 +36,14 @@ type World struct {
 	Reserve   econ.Stock // still in the crust
 	Warehouse econ.Stock // dug, refined or landed, and for sale
 
+	// Rad is the world's dose rate, 0..1, drawn at genesis from the same
+	// number as its spodumene seam. It decides three things and nothing
+	// else: which chains may stand up here (industry.Chain.MinRad), how
+	// big a city the world can hold, and how fast that city grows. A
+	// hostile world is not a special kind of World — it is a World with a
+	// high Rad, and every consequence follows from that one field.
+	Rad float64
+
 	// Plant is the industry standing here: one composed supermodule per
 	// chain the world found worth running. Each was assembled from the
 	// primitives in internal/industry and can be inspected, scaled or
@@ -84,6 +92,20 @@ type World struct {
 	// they die with the government that gave them.
 	Orders []StandingOrder
 
+	// SurveyUntil is the day a prospector's brief on this world expires,
+	// and surveyBonus is the extra fraction of its dig budget the reading
+	// is worth while it lasts. See prospect.go: a survey is the only thing
+	// in the game that raises extraction without raising population.
+	SurveyUntil int
+	surveyBonus float64
+
+	// mandated is how many of the leading entries in Plant stand under a
+	// Mandate rather than under Rank. The mine reads it: a mandated line
+	// gets first call on the dig budget, because a world that was TOLD to
+	// run a refinery and then has to out-bid its own copper mine for the
+	// ore is not sited, it is merely hopeful.
+	mandated int
+
 	// shortfall counts consecutive days the world could not feed itself,
 	// and fed is yesterday's ration: what the population ate against what
 	// it wanted. Growth is made of the second; see grow().
@@ -120,7 +142,20 @@ func Seed(seed int64, stellar int, name string, system int, pop int, c govt.Colo
 		w.Tariff = colourTariff
 	}
 	e := econ.Endow(seed, stellar, pop, govt.MineRate(c))
-	w.Reserve, w.Warehouse = e.Reserve, e.Warehouse
+	w.Reserve, w.Warehouse, w.Rad = e.Reserve, e.Warehouse, e.Rad
+	// A hot world is a camp, not a city. The gazetteer's population is what
+	// grew there in a universe with no spodumene under it; this is the
+	// correction. Nothing else clamps population down, so this line is the
+	// entire reason the richest fuel seams are worked by a few thousand
+	// people in hardsuits rather than by a metropolis.
+	// The treasury is deliberately NOT re-cut to the smaller population: a
+	// camp was capitalised by whoever financed the seam, against the seam,
+	// and it lands holding a city's working capital with a hamlet's
+	// headcount. That is what lets a hostile world buy the acid, the food
+	// and the steel it can never make, from day one.
+	if cap := w.PopCeiling(); float64(w.Pop) > cap {
+		w.Pop = int(cap)
+	}
 	// The magazine the world built before the game started: a populated
 	// world is never quite defenceless on day one. It is on the books like
 	// the warehouse — Genesis() counts it — and once it is spent, it is
@@ -131,10 +166,66 @@ func Seed(seed int64, stellar int, name string, system int, pop int, c govt.Colo
 	if pop > 0 {
 		w.endow(Spaceport)
 	}
+	// The siting rule, applied. A world hot enough to be licensed for the
+	// fuel business is FOUNDED as a refinery, exactly as a capital is
+	// founded with an arsenal — it does not have to out-bid its own copper
+	// for the privilege. Which of the two finishing lines it runs alternates
+	// on the stellar ID, so the map carries both forms of fuel and a pilot
+	// with a fast loop has to go and find a melt world rather than buying
+	// whatever the nearest refinery happens to pour.
+	if line := industry.LineFor(w.Rad, stellar%2 == 1); line != "" {
+		w.Mandate = append(w.Mandate, line)
+	}
 	w.standUpIndustry()
+	w.stake()
 	w.Reprice()
 	return w
 }
+
+// stake capitalises a licensed refinery.
+//
+// A hot world is founded with working capital sized to its OWN LINE: enough
+// to buy the acid, the hydraulic fluid and the food it can never make, for
+// long enough to get the first fuel out of the door and paid for.
+//
+// Without it the hot worlds land in a trap that is easy to miss and
+// impossible to escape from the inside. No chemicals, so no fuel; no fuel,
+// so no revenue; no revenue, so no chemicals. A port buys only what its
+// treasury covers, so a broke world does not send a distress signal — it
+// quietly declines the cargo and the courier flies on. Kestrel ran a 63 t a
+// day melt line at nine per cent of capacity for a simulated year and
+// nothing anywhere said why.
+//
+// This is the only place in the game that mints money outside the ordinary
+// pop/4 rule, and it mints it at genesis, where minting is what genesis is
+// for. After this the ledger is closed and every credit is conserved.
+func (w *World) stake() {
+	if !w.Hostile() {
+		return
+	}
+	var daily float64
+	for _, p := range w.Plant {
+		d := p.Demand()
+		for m := econ.Material(0); m < econ.Count; m++ {
+			// Only what must be BOUGHT. Crust the world lifts itself is
+			// free at the pithead and is not working capital.
+			if d[m] > 0 && !m.Crust() {
+				daily += d[m] * baseValue[m]
+			}
+		}
+	}
+	// A hot world buys at a scarce world's prices — it is at the end of
+	// every supply line in the game — so the stake is sized at the markup
+	// it will actually be charged, not at base.
+	if stake := int(daily * stakeMarkup * stakeDays); stake > w.Credits {
+		w.Credits = stake
+	}
+}
+
+const (
+	stakeMarkup = 2.2  // what a port at the end of the line actually pays
+	stakeDays   = 45.0 // long enough to sell the first fuel and be paid
+)
 
 // endow stands a building up at genesis: built, but not bought.
 func (w *World) endow(b Building) {
@@ -165,7 +256,7 @@ func (w *World) Genesis() econ.Stock { return w.Reserve.Plus(w.Warehouse) }
 // already make the obvious choice.
 func (w *World) standUpIndustry() {
 	w.Plant = nil
-	ranked := industry.Rank(w.Reserve)
+	ranked := industry.Rank(w.Reserve, w.Rad)
 	slots := maxChains + w.Built[Works]
 	// Mandated chains take slots first, in mandate order, if the crust can
 	// back them; the rank fills what is left.
@@ -209,23 +300,84 @@ func (w *World) standUpIndustry() {
 		}
 	}
 	ranked = chosen
+	// Count the mandates BEFORE the plants are built: the rate each chain
+	// is assembled at depends on whether it is one.
+	w.mandated = 0
+	for _, ch := range chosen {
+		for _, name := range w.Mandate {
+			if ch.Name == name {
+				w.mandated++
+				break
+			}
+		}
+	}
 	// Throughput scales with population: the city is the workforce, exactly
 	// as the war economy already assumes for industrial points.
-	rate := math.Max(float64(w.Pop), 1) / 1e6 * chainRate
-	for _, ch := range ranked {
+	// Throughput scales with the workforce — and is then CAPPED AGAINST THE
+	// PITHEAD, which is the correction that matters.
+	//
+	// A chain is built at chainRate tons a day per million citizens and a
+	// mine lifts govt.MineRate tons a day per million citizens, and
+	// chainRate is the larger of the two. So a world with two chains was
+	// founded with two and a half times more factory than its own ground
+	// could ever feed, and a capital with four chains had five times more.
+	// Nameplate capacity became a number with no relationship to anything:
+	// the galaxy's refineries reported 954 t/d of fuel capacity and made
+	// forty-five, and every "utilisation" figure in the report was really
+	// measuring how oversized the plant was rather than how short the
+	// supply.
+	//
+	// importFactor is the part of a world's intake that is EXPECTED to
+	// arrive by ship rather than come out of its own rock. At 1.8 a world
+	// is built to buy nearly half of what it processes, which is enough to
+	// keep every port dependent on the lanes — the point of the whole
+	// economy — without designing in a permanent four-fifths idle.
+	popM := math.Max(float64(w.Pop), 1)/1e6 + w.autoCrew()
+	full := popM * chainRate
+	// The cap is charged against the chains that were RANKED — the ones a
+	// world stood up because its own rocks made them the obvious choice.
+	// A mandated line is exempt, and that is not a loophole: a refinery
+	// whose whole business model is importing acid and hydraulic fluid to
+	// process ore it digs itself is precisely the case the pithead cap
+	// gets wrong. Capping it shrank the galaxy's fuel output by a third
+	// while fixing steel and chips, which is the wrong trade in a pass
+	// whose subject is fuel.
+	capped := full
+	if n := float64(len(ranked) - w.mandated); n > 0 {
+		if c := importFactor * govt.MineRate(w.Govt) * popM / n; c < capped {
+			capped = c
+		}
+	}
+	for i, ch := range ranked {
+		rate := capped
+		if i < w.mandated {
+			rate = full
+		}
 		w.Plant = append(w.Plant, ch.Assemble(rate, w.Govt))
 	}
 	// The return path, sized to the world: a composter that can keep up
 	// with what its people eat, and a breaker that can work a wreck a week.
-	popM := math.Max(float64(w.Pop), 1) / 1e6
+	civicM := math.Max(float64(w.Pop), 1) / 1e6
 	garden := 0.0
 	if w.Reserve[econ.Biomass] > 0 || w.Warehouse[econ.Biomass] > 0 {
 		// Enough biomass through a thresher and a cannery to cover the
 		// subsistence share of the ration: appetite / (0.75 · 0.90 · yield).
 		garden = w.appetite(econ.Rations) * gardenShare / (0.75 * 0.90)
 	}
-	w.Civic = industry.Civic(garden, w.organicAppetite()*1.1, popM*breakerRate, w.Govt)
+	w.Civic = industry.Civic(garden, w.organicAppetite()*1.1, civicM*breakerRate, w.Govt)
 }
+
+// autoCrew is the workforce a hostile world does not have, expressed in
+// millions of citizens.
+//
+// A dose that will not let a city grow will not stop a machine, so a hot
+// world is worked remotely: shift crews in hardsuits, rail lines nobody
+// rides, and a smelter run from orbit. Without this the siting rule would be
+// self-defeating — we would have put the only fuel seams in the universe
+// under the only worlds with nobody to work them, and the lithium trade
+// would never start. It scales with dose because the hotter the world, the
+// more of its industry was built to run unmanned in the first place.
+func (w *World) autoCrew() float64 { return autoCrew * w.Rad }
 
 // organicAppetite is the tonnage of compost a day's eating leaves.
 func (w *World) organicAppetite() float64 {
@@ -242,8 +394,36 @@ func (w *World) organicAppetite() float64 {
 // Habitat raises it, and a world that keeps growing is a world somebody
 // kept building. Food decides whether it grows; housing decides how far.
 func (w *World) Housing() float64 {
-	return popCeiling * (1 + housingPerHabitat*float64(w.Built[Habitat]))
+	return w.PopCeiling() * (1 + housingPerHabitat*float64(w.Built[Habitat]))
 }
+
+// PopCeiling is how many people this world could hold before anybody builds
+// anything, and it is where the dose bites hardest.
+//
+// A clean world gets the full ceiling. A world with a body under it does not
+// get a FRACTION of that ceiling — it gets a different ceiling entirely,
+// because a hot world is not a smaller version of a city, it is a sealed
+// industrial site with a shift roster. At the milling threshold that is
+// most of a million people under domes; at the breeder threshold it is a
+// hundred and fifty thousand in hardsuits.
+//
+// Scaling the ordinary ceiling instead was the first cut, and it collapsed
+// a four-million world to forty thousand in one step at genesis. The map is
+// more legible, and the landing city more honest, with a camp that is a
+// tenth of a world rather than a thousandth of one.
+func (w *World) PopCeiling() float64 {
+	if w.Rad <= 0 {
+		return popCeiling
+	}
+	return math.Max(hostileCeiling*(1-w.Rad), hostileFloor)
+}
+
+// Hostile reports whether this world is hot enough that the dose, rather
+// than the market, is what decides what happens on it.
+func (w *World) Hostile() bool { return w.Rad >= HostileDose }
+
+// HostileDose is where a world stops being a place and starts being a site.
+const HostileDose = 0.35
 
 // Makes reports whether this world produces a material at all.
 func (w *World) Makes(m econ.Material) bool {
@@ -253,6 +433,52 @@ func (w *World) Makes(m econ.Material) bool {
 		}
 	}
 	return false
+}
+
+// MineNeed is what is worth lifting today, given what is already stacked on
+// the pad. A finite reserve must not be strip-mined into a heap the plant
+// can never work through, and on a hostile world that is exactly what
+// happens without this: the refinery is gated by acid and fluid somebody
+// else has to fly in, while its own mine keeps lifting ore against a want
+// that is never satisfied. Thirty-eight thousand tons of spodumene came out
+// of Kestrel's crust in one year to make eighteen hundred tons of fuel.
+//
+// The reserve is the only finite thing in the game. Digging it to make a
+// pile is not neutral — it is the one irreversible mistake a world can make.
+func (w *World) MineNeed(m econ.Material, need float64) float64 {
+	if need <= 0 {
+		return 0
+	}
+	if w.Warehouse[m] >= need*mineCover {
+		return 0
+	}
+	return need
+}
+
+// mineCover is how many days of its own demand a world will stack on the
+// pad before it stops digging.
+const mineCover = 20.0
+
+// mandateNeeds reports whether a material feeds the line this world was
+// sited to run. It is the pricing half of the mandate: the mine digs for it
+// first, the factory floor runs it first, and the shop bids for it hardest.
+func (w *World) mandateNeeds(m econ.Material) bool {
+	for _, p := range w.Mandated() {
+		if p.Demand()[m] > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// Mandated is the leading slice of Plant that stands under a Mandate: the
+// arsenal a capital was founded with, and the line a licensed world was
+// sited for. These are the plants whose feedstock the mine serves first.
+func (w *World) Mandated() []*industry.Module {
+	if w.mandated > len(w.Plant) {
+		return w.Plant
+	}
+	return w.Plant[:w.mandated]
 }
 
 // Wants reports the daily tonnage of a material this world's industry needs
@@ -289,6 +515,10 @@ const (
 	breakerRate        = 6.0  // tons/day of scrap a port can break per million citizens
 	gardenShare        = 0.65 // the share of its own ration a world with soil grows itself
 	popCeiling         = 3.2e7
+	hostileCeiling     = 1.5e6    // a sealed industrial world at the milling threshold
+	hostileFloor       = 40_000.0 // nobody is evacuated entirely; somebody works the seam
+	autoCrew           = 3.6      // millions-of-citizens equivalent of a fully hot world's machines
+	importFactor       = 1.8      // how much factory a world is built with, against its own dig budget
 	housingPerHabitat  = 0.5
 	luxuryExponent     = 1.2  // rich worlds want more per head; the outer-world gradient
 	garrisonRoundsBurn = 0.08 // tons of Rounds a million citizens' militia fires in drills per day
@@ -329,6 +559,21 @@ func (w *World) Reprice() {
 		steep := 2.0
 		if m == econ.Rations {
 			steep = 7.0
+		} else if w.mandateNeeds(m) {
+			// A world bids like a starving one for the feedstock of the
+			// line it was SITED for. A refinery short of acid is not
+			// inconvenienced, it is shut: it has no other industry, no
+			// population worth the name, and nothing else to sell.
+			//
+			// At the ordinary curve it could not outbid ordinary trade.
+			// Acid tops out at 3x a base of 160 while ore tops out at 3x
+			// a base of 220 two jumps nearer, so the couriers went where
+			// the margin-per-megametre was — correctly — and fifteen
+			// refineries wanting 525 t of reagent a day between them were
+			// served sixty. The scarcity curve was right and the STEEPNESS
+			// was wrong: desperation is not the same shape for a cargo you
+			// can do without as for one you cannot.
+			steep = 5.0
 		}
 		switch {
 		case cover < coverDays:
@@ -406,6 +651,16 @@ func (w *World) appetite(m econ.Material) float64 {
 		return lux * 1.4
 	case econ.FuelCells:
 		return popM * 3.2
+	case econ.Pellets:
+		// A city's ground reactors burn clad solids: steady, unglamorous,
+		// linear in heads. This is the sink that keeps pellets moving even
+		// when nobody is fuelling a fleet.
+		return popM * 1.15
+	case econ.Melt:
+		// The melt market is thinner and richer — fast loops are refits and
+		// capital ships, not municipal heating — so it grows with the
+		// luxury exponent like medicine and chips.
+		return lux * 0.55
 	case econ.Lumber:
 		return popM * 2.1
 	case econ.Ore:
@@ -427,9 +682,17 @@ func (w *World) appetite(m econ.Material) float64 {
 var baseValue = [econ.Count]float64{
 	econ.Lumber: 140, econ.Ore: 220, econ.Rations: 90,
 	econ.Medicine: 480, econ.Chips: 640, econ.FuelCells: 300,
+	econ.Pellets: 860, econ.Melt: 1020,
 
 	econ.Steel: 210, econ.Copper: 340, econ.Silicon: 380,
 	econ.Polymer: 190, econ.Grain: 70,
+
+	// The lithium line, priced by how much rock and how much shielding each
+	// ton cost to get. Heavylith is the most valuable ton in the game and
+	// the one nobody can carry far: the two facts together are what pin the
+	// finishing plants to the hostile worlds.
+	econ.Lithex: 185, econ.Lithium: 540, econ.Heavylith: 1650,
+	econ.Acid: 160, econ.Fluid: 235,
 
 	// The yard tier is priced by what went into it. Scrap is worth what a
 	// breaker can get back out of it; compost is worth nothing to anybody
@@ -438,7 +701,7 @@ var baseValue = [econ.Count]float64{
 	econ.Compost: 0, econ.Scrap: 120,
 
 	econ.Ferrite: 60, econ.Cuprite: 95, econ.Silicate: 80,
-	econ.Volatiles: 70, econ.Biomass: 40,
+	econ.Volatiles: 70, econ.Biomass: 40, econ.Spodumene: 130,
 
 	econ.Slag: 0, // worthless by construction — it is where value goes to die
 }

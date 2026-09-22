@@ -6,7 +6,11 @@
 // docs/lab-reports/2026-08-27-bridge-energy-game-design.md.
 package power
 
-import "math"
+import (
+	"math"
+
+	"yodacon.org/gonex/internal/reentry"
+)
 
 // Grid is the installed plant plus its live state. Everything is MJ and MW;
 // the entry sim's watts divide by 1e6 on the way in.
@@ -18,6 +22,20 @@ type Grid struct {
 	RadiatorMW float64 // heat rejection — panels only work in vacuum
 	HeatCapMJ  float64 // structural heat ceiling before things cook
 	OutfitKg   float64 // mass bought beyond the stock plant
+
+	// Reactor is which design is bolted in; see reactor.go. It decides how
+	// much of a ton of heavy lithium the ship can reach, and WHICH OF THE
+	// TWO FUEL FORMS it will accept — so it is a loadout choice that
+	// changes which half of the galaxy's refineries you can buy from.
+	Reactor Class
+
+	// Shield is the plasma-confinement hardware fitted beyond the stock
+	// coil. It lives on the grid rather than on the vehicle because that is
+	// where it is BOUGHT and because every rung of it is a load: a phased
+	// array drives current against a resistive plasma, an injection ring
+	// accelerates mass, and a colder coil is a bigger refrigerator. See
+	// internal/reentry/confinement.go for what each one does to the pillow.
+	Shield reentry.Confinement
 
 	// live state
 	BattMJ float64
@@ -191,11 +209,52 @@ func Catalog() []Outfit {
 			func(g *Grid) { g.RadiatorMW += 2 }},
 		{"Thermal mass sink", "+300 MJ heat ceiling", 7000, 4000,
 			func(g *Grid) { g.HeatCapMJ += 300 }},
+
+		// The reactor ladder. These do not stack: each Fit replaces what is
+		// installed, and the mass and generation delta is whatever the swap
+		// actually is, so buying down the ladder refunds the mass. The
+		// price is the fuel-economy step, not the megawatts — x3.5 range
+		// off the same ton of fuel is worth more than 1.6 MW ever was.
+		{"Sodium fast loop", "burns MELT — x3.5 range per ton of fuel, +1.6 MW", 68000, 7000,
+			func(g *Grid) { g.Fit(Fast) }},
+		{"Shipboard breeder", "burns MELT — x4.5 range, breeds heavylith from a lithium blanket", 145000, 16000,
+			func(g *Grid) { g.Fit(Breeder) }},
+
+		// The confinement ladder. Four outfits, four different ways the
+		// magnetopause goes wrong, and not one of them is a percentage on
+		// the same number — see internal/reentry/confinement.go.
+		{"HTS coil rewind", "+0.45 T at the nose — stand-off goes as the cube root of field", 41000, 11000,
+			func(g *Grid) { g.Shield.CoilBoost += 0.45 }},
+		{"Multipole cusp ring", "plugs the polar cusps: more usable pressure, two thirds less wake drag", 36000, 6500,
+			func(g *Grid) { g.Shield.CuspSeal = clamp01(g.Shield.CuspSeal + 0.5) }},
+		{"Phased steering array", "leans the envelope — +45% commandable L/D and MHD grip higher up", 52000, 5200,
+			func(g *Grid) { g.Shield.ArrayGain = clamp01(g.Shield.ArrayGain + 0.5) }},
+		{"Seed injection ring", "puts continuum in front of the nose where the air is too thin to grip", 47000, 8800,
+			func(g *Grid) { g.Shield.RingFeed += 0.011 }},
+		{"Cryoplant uprate", "-35% refrigeration load: hold the field for the whole corridor", 19000, 3000,
+			func(g *Grid) { g.Shield.CryoMargin = clamp01(g.Shield.CryoMargin + 0.5) }},
 	}
 }
 
 // Buy applies an outfit and books its mass.
+//
+// A reactor swap books its own mass inside Fit — the delta against whatever
+// was installed, which can be negative — so the catalogue's flat Kg must not
+// be added on top of it.
 func (g *Grid) Buy(o Outfit) {
+	before := g.Reactor
 	o.Apply(g)
-	g.OutfitKg += o.Kg
+	if g.Reactor == before {
+		g.OutfitKg += o.Kg
+	}
+}
+
+func clamp01(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
 }

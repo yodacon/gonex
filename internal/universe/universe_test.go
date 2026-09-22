@@ -382,9 +382,14 @@ func TestLossesShowUpInTheBooksAndTheCensus(t *testing.T) {
 		u.Tick()
 	}
 	before := u.Fleet.Afloat()
+	census := len(u.Fleet.Hulls)
 	killed := 0
 	for _, h := range u.Fleet.Hulls {
-		if h.Status == traffic.Lost {
+		// A laid-up hull is not a ship: its plate is back on a yard's
+		// shelf. Sinking one would drop the same tons a second time, and
+		// three of these five casualties doing exactly that minted 1,915
+		// tons before Gone() was checked here and in wreck().
+		if h.Status.Gone() {
 			continue
 		}
 		u.Lose(h, "test")
@@ -402,9 +407,13 @@ func TestLossesShowUpInTheBooksAndTheCensus(t *testing.T) {
 	if u.Journal.LostHulls != killed {
 		t.Errorf("journal counted %d losses, want %d", u.Journal.LostHulls, killed)
 	}
-	// The census itself never shrinks: a lost hull is still a row.
-	if got := len(u.Fleet.Hulls); got != 3*12 {
-		t.Errorf("census is %d rows after losses, want %d", got, 3*12)
+	// The census never SHRINKS: a lost hull is still a row, for ever.
+	// It may have grown — the merchant fleet is sized by the board now
+	// (see merchantfleet.go) — but a casualty must never delete a row,
+	// because "how many hulls has Red lost this war" is the question the
+	// whole economy is about.
+	if got := len(u.Fleet.Hulls); got < census {
+		t.Errorf("census shrank from %d rows to %d over five losses", census, got)
 	}
 	// And the simulation must survive its own casualties.
 	for d := 0; d < 40; d++ {

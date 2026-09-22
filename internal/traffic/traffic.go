@@ -54,6 +54,13 @@ const (
 	// Lost: destroyed. The census counts it forever, because "how many hulls
 	// has Red lost this war" is the question the whole economy is about.
 	Lost
+	// LaidUp: broken up at a yard because the board stopped paying for it.
+	// A laid-up hull is NOT destroyed and is not a casualty — its plate went
+	// back into the warehouse it came out of, and the row is kept so the
+	// same ship can be recommissioned under the same name when the margins
+	// return. It is the only status whose tons are somewhere else, which is
+	// why Structure() must not count it.
+	LaidUp
 
 	StatusCount
 )
@@ -72,6 +79,8 @@ func (s Status) String() string {
 		return "IN SECTOR"
 	case Lost:
 		return "LOST"
+	case LaidUp:
+		return "LAID UP"
 	}
 	return "IDLE"
 }
@@ -133,6 +142,20 @@ const (
 	// Flight: a standing order to move hulls A → B. Arriving at a hostile
 	// world, it fights; at a friendly one, it berths as garrison.
 	Flight
+	// Harvester: a gatherer. It flies EMPTY to a seam, lifts crust straight
+	// out of the ground into its own hold against a royalty, and carries it
+	// to the nearest port that wants it. A courier moves what somebody
+	// already dug; a harvester is the digging.
+	//
+	// It exists because the population-scaled mine is the one hard ceiling
+	// in the economy — a world lifts tons in proportion to the people
+	// living on it, whatever its seams are worth — and a rich rock with
+	// nobody on it was, before this, worth precisely nothing.
+	Harvester
+	// Survey: a prospector. It carries nothing, sells nothing and earns
+	// nothing directly; it flies to a seam and reads it, and for some weeks
+	// afterwards everybody digging there and next door digs faster.
+	Survey
 )
 
 func (m Mission) String() string {
@@ -141,6 +164,10 @@ func (m Mission) String() string {
 		return "convoy"
 	case Flight:
 		return "flight"
+	case Harvester:
+		return "harvester"
+	case Survey:
+		return "survey"
 	}
 	return "courier"
 }
@@ -165,14 +192,20 @@ func (h *Hull) Free() float64 { return math.Max(h.Capacity()-h.Laden(), 0) }
 func (h *Hull) Magazine() float64 { return h.Cargo[econ.Rounds] }
 
 // Structure is the hull's own mass as a material vector: the pool the
-// auditor counts it in. A hull is Hull tons that left a warehouse.
+// auditor counts it in. A hull is Hull tons that left a warehouse — so a
+// hull that has been broken up has no structure here, because those tons
+// are back on the shelf and would otherwise be counted twice.
 func (h *Hull) Structure() econ.Stock {
 	var s econ.Stock
-	if h.Status != Lost {
+	if h.Status != Lost && h.Status != LaidUp {
 		s[econ.Hull] = h.Dry
 	}
 	return s
 }
+
+// Gone reports the statuses that are not a ship in the universe right now:
+// destroyed, or broken up at a yard.
+func (s Status) Gone() bool { return s == Lost || s == LaidUp }
 
 // Lane is a link between two stellars, with a length. Hulls fly along it.
 type Lane struct {
@@ -328,7 +361,7 @@ func (r *Registry) Census() [StatusCount]int {
 func (r *Registry) Afloat() int {
 	n := 0
 	for _, h := range r.Hulls {
-		if h.Status != Lost {
+		if !h.Status.Gone() {
 			n++
 		}
 	}
@@ -341,7 +374,7 @@ func (r *Registry) Afloat() int {
 func (r *Registry) CargoAfloat() econ.Stock {
 	var s econ.Stock
 	for _, h := range r.Hulls {
-		if h.Status != Lost {
+		if !h.Status.Gone() {
 			s = s.Plus(h.Cargo)
 		}
 	}
@@ -452,7 +485,7 @@ func (r *Registry) Salvage(d *Debris, day int) {
 	}
 	var near []cand
 	for _, h := range r.Hulls {
-		if h.Status == Lost || h.Status == Resident || h.Free() <= 0 {
+		if h.Status.Gone() || h.Status == Resident || h.Free() <= 0 {
 			continue
 		}
 		switch {
@@ -533,7 +566,7 @@ func (r *Registry) DebrisNear(h *Hull) []*Debris {
 func (r *Registry) ByGovt(c govt.Color) []*Hull {
 	var out []*Hull
 	for _, h := range r.Hulls {
-		if h.Govt == c && h.Status != Lost {
+		if h.Govt == c && !h.Status.Gone() {
 			out = append(out, h)
 		}
 	}
@@ -676,8 +709,8 @@ func (r *Registry) Report() []string {
 	out := []string{fmt.Sprintf("%d hulls in the universe, %d afloat, %.0ft in transit, %.0ft in %d wreck fields",
 		len(r.Hulls), r.Afloat(), r.CargoAfloat().Total(), r.DebrisAfloat().Total(), len(r.Debris))}
 	c := r.Census()
-	out = append(out, fmt.Sprintf("  idle %d · loading %d · hauling %d · returning %d · fighting %d · in sector %d · lost %d",
-		c[Idle], c[Loading], c[Hauling], c[Returning], c[Fighting], c[Resident], c[Lost]))
+	out = append(out, fmt.Sprintf("  idle %d · loading %d · hauling %d · returning %d · fighting %d · in sector %d · laid up %d · lost %d",
+		c[Idle], c[Loading], c[Hauling], c[Returning], c[Fighting], c[Resident], c[LaidUp], c[Lost]))
 	for _, g := range govt.Colors() {
 		hulls := r.ByGovt(g)
 		var tons float64

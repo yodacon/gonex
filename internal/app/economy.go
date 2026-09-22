@@ -75,12 +75,39 @@ func (a *App) seedUniverse() {
 			continue
 		}
 		seen[id] = true
+		// The flag on a gazetteer world is the polity the 1997 record
+		// filed it under. Seeding the whole map Neutral was the single
+		// biggest distortion in the economy: it left two colours with
+		// three worlds each and handed every other port in the galaxy to
+		// nobody, so the trifecta's proof described a map the game did
+		// not have.
 		ports = append(ports, universe.Port{
 			Stellar: id, Name: st.Name, System: st.System,
-			Pop: city.PopulationOf(id), Govt: govt.None,
+			Pop: city.PopulationOf(id), Govt: govt.FromGazetteer(st.Govt),
 		})
 	}
 	a.uni = universe.New(a.voy.Seed, ports, hullsPerColour)
+	// Charter the lanes from the real jump map. Until this call every lane
+	// in the economy was the registry's default length, which meant the
+	// route ranking's margin-per-megametre was margin divided by a
+	// constant: a hundred and nine ports all equally far from each other,
+	// and geography with no effect on trade whatsoever. It is also what
+	// tells the economy which worlds are NEIGHBOURS, and therefore where an
+	// intermediate like copper is allowed to move at all.
+	a.uni.ChartLanes(func(from, to int) int {
+		af, at := a.gal.Stellars[from], a.gal.Stellars[to]
+		if af == nil || at == nil {
+			return -1
+		}
+		if af.System == at.System {
+			return 0
+		}
+		r := a.gal.Route(af.System, at.System)
+		if r == nil {
+			return -1
+		}
+		return len(r) - 1
+	})
 	a.uniDay = a.voy.Day
 	// The player's deck is matter like anybody's, and so are the manifests of
 	// the census hulls currently flying as ships in this sector. Both live
@@ -251,6 +278,9 @@ func (a *App) registerEconomyCommands(c *console.Console) {
 			c.Printf("  LEDGER DOES NOT BALANCE: %v", bad)
 		} else {
 			c.Printf("  ledger balances — %d cr in circulation, every one in a purse", a.uni.MoneySupply())
+		}
+		for _, line := range a.uni.FleetReport() {
+			c.Printf("  %s", line)
 		}
 		for _, st := range a.uni.Standings() {
 			c.Printf("  %-5s %d worlds · pop %.1fM · %d hulls · treasuries %d cr · exchequer %d cr · capital rated %.2f",

@@ -25,6 +25,15 @@ type Endowment struct {
 	// Warehouse is the accumulated stock on the surface at genesis — the
 	// centuries of digging that happened before the game started.
 	Warehouse Stock
+
+	// Rad is the world's dose rate, 0 (clean) to 1 (a hot cell with a sky).
+	// It is not decoration and it is not a modifier bolted on afterwards:
+	// it is the SAME DRAW as the spodumene seam, so the worlds with the
+	// fuel are exactly the worlds nobody can live on. Everything hostile
+	// about a hostile world follows from this one number — its population
+	// ceiling, its growth, and the fact that it is the only place a
+	// radiant smelter or a breeder will ever stand up.
+	Rad float64
 }
 
 // Total is every ton the world was created with, in the ground and on it.
@@ -74,7 +83,54 @@ const (
 	// with, expressed as days of its own extraction. Enough to trade on from
 	// turn one, not enough to live on.
 	warehouseDays = 26.0
+
+	// hotChance is how often a world draws a hot spodumene body at all.
+	// Deliberately low: fuel is the bottleneck the whole map is organised
+	// around, and a universe where every third rock is a breeder site has
+	// no lithium problem to solve.
+	hotChance = 0.22
+
+	// habitablePop is the population above which a world is, by the fact of
+	// its own existence, not a death world. The rule is a hard cutoff rather
+	// than a taper, and that is deliberate: a capital must never be randomly
+	// condemned, and a taper cannot promise that — a condemned capital is a
+	// colour deleted, and the trifecta's whole balance proof with it.
+	//
+	// The NUMBER, though, has to be read off the map rather than chosen. The
+	// first cut put it at 1.5 M on the reasoning that a city that size is
+	// evidence of a clean seam. On the eleven-world rig that looked right.
+	// On the real gazetteer it condemned nothing at all: the city generator
+	// grows no world smaller than 1.36 M and the median is 3.97 M, so ONE
+	// HUNDRED AND NINE worlds out of a hundred and nine were exempt and the
+	// entire fuel industry quietly failed to exist. Set at 6 M it protects
+	// the top sixth of the map — which is where every capital is drawn from
+	// — and leaves the rest eligible.
+	habitablePop = 6.0e6
+
+	// spodumeneScale is how much ore a fully hot world carries relative to
+	// an ordinary crust seam. Hostile worlds are rich — that is the trade
+	// the map offers, and it has to be worth taking.
+	spodumeneScale = 2.6
 )
+
+// Dose draws a world's radiological character, 0..1. Exported because the
+// hostile-world rules outside this package — who may smelt, who may grow,
+// how big a city gets — must all read the SAME number rather than each
+// deciding for itself what "hot" means.
+//
+// Two gates, in order, and both are disqualifications rather than modifiers.
+// Most worlds simply never drew a body. Of those that did, the very largest
+// are clean by definition — a city that size is the proof, and it is also
+// where the capitals come from.
+func Dose(seed int64, world, pop int) float64 {
+	if unit(seed, world, Spodumene, 7) >= hotChance {
+		return 0
+	}
+	if float64(pop) > habitablePop {
+		return 0
+	}
+	return math.Min(0.35+0.65*unit(seed, world, Spodumene, 8), 1)
+}
 
 // Endow draws a world's genesis holdings.
 //
@@ -85,8 +141,27 @@ const (
 func Endow(seed int64, world, pop int, mineRate float64) Endowment {
 	var e Endowment
 	popM := math.Max(float64(pop), 1) / 1e6
+	e.Rad = Dose(seed, world, pop)
 
 	for _, m := range Crusts() {
+		if m == Spodumene {
+			// The seam IS the dose. A clean world has no spodumene at all,
+			// however rich it is in everything else, and a hot world's
+			// reserve scales with exactly how hot it is. This is the single
+			// place in the game where two facts about a world are forced to
+			// be the same fact.
+			if e.Rad <= 0 {
+				continue
+			}
+			u := unit(seed, world, m, 2)
+			if u < 1e-6 {
+				u = 1e-6
+			}
+			heavy := math.Min(math.Pow(u, -1/tailPower), 40)
+			tons := baseReserve * math.Sqrt(popM) * heavy * spodumeneScale * e.Rad
+			e.Reserve.Add(m, math.Round(tons))
+			continue
+		}
 		if unit(seed, world, m, 1) < barrenChance {
 			continue // this world simply has none of it
 		}

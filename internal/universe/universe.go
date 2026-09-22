@@ -112,6 +112,7 @@ func New(seed int64, ports []Port, hullsPer int) *Universe {
 	for _, c := range govt.Colors() {
 		if cap := u.Capital(c); cap != nil {
 			cap.endow(Works)
+			cap.endow(Works) // two: a capital runs its mandates AND a trade
 			cap.endow(Bastion)
 			cap.endow(Habitat)
 			// The arsenal: a capital is founded making its own rounds, if it
@@ -119,7 +120,21 @@ func New(seed int64, ports []Port, hullsPer int) *Universe {
 			// dry by day 120, because no colour's crust ranked a Munitions
 			// chain in its top two and rounds arrived only when a courier
 			// found the price worth it.
-			cap.Mandate = []string{"Munitions"}
+			// Appended, not assigned: a capital that is also a licensed
+			// refinery keeps both mandates. Overwriting here quietly
+			// un-sited every hot capital in the universe.
+			//
+			// The yard is mandated for the same reason the arsenal is, and
+			// it is the same failure a year later. Five chains stand on a
+			// ferrite seam and tie exactly — bulk ore, structural steel,
+			// the yard, munitions, ordnance — so catalogue order decides,
+			// and the yard is third. On the eleven-world rig the governor
+			// eventually bought enough Works to reach it. On the real
+			// gazetteer it never did: NOT ONE TON OF HULL PLATE was pressed
+			// anywhere in the galaxy in two simulated years, so no hull
+			// lost in battle could ever be replaced and no merchant fleet
+			// could ever grow, however hard the board was paying.
+			cap.Mandate = append(cap.Mandate, "Munitions", "Shipyard")
 			cap.standUpIndustry()
 			cap.Reprice()
 		}
@@ -149,7 +164,16 @@ func (u *Universe) raiseFleets(per int) {
 		if len(homes) == 0 {
 			continue
 		}
-		for i := 0; i < per; i++ {
+		// `per` is a FLOOR, not the answer. A trade network's size is a
+		// property of the map: a colour holding twenty-six worlds needs a
+		// merchant marine to match, and handing it the same sixteen hulls
+		// as a colour holding three is what left the full gazetteer with
+		// no trade in it at all.
+		n := per
+		if scaled := len(homes) * u.Tune.OpeningHulls; scaled > n {
+			n = scaled
+		}
+		for i := 0; i < n; i++ {
 			home := homes[i%len(homes)]
 			dry := 220.0 + float64(u.Rng.Intn(680))
 			h := &traffic.Hull{
@@ -249,8 +273,20 @@ func (u *Universe) Tick() {
 	}
 	u.runOrders()
 	u.govern()
+	u.prospect()
 	u.flyFleet()
 	u.replaceHulls()
+}
+
+// prospect is the day's decision about the ground rather than the board:
+// who is gathering, and who is going to go and look. See prospect.go.
+func (u *Universe) prospect() {
+	for _, c := range govt.Colors() {
+		u.sendHarvesters(c)
+		if u.Day%surveyEvery == int(c)%surveyEvery {
+			u.sendSurvey(c)
+		}
+	}
 }
 
 // mine moves crust into the warehouse. It is the ONLY process in the game
@@ -258,11 +294,17 @@ func (u *Universe) Tick() {
 // draining a finite reserve — which is why the economy is zero-sum in the
 // long run rather than merely balanced in the short.
 func (u *Universe) mine(w *World) {
-	if w.Govt == govt.None {
+	// Konquest's neutrals do not produce — with one exception, and it is
+	// the exception the whole fuel trade is built on. A hostile world is
+	// not a polity with a workforce that can be on strike; it is a licensed
+	// site with machines on it, and the machines run for whoever is paying.
+	// That is what makes the hot worlds the free ports of this economy:
+	// nobody holds them, everybody buys from them.
+	if w.Govt == govt.None && !w.Hostile() {
 		return
 	}
-	popM := float64(w.Pop) / 1e6
-	budget := govt.MineRate(w.Govt) * popM
+	popM := float64(w.Pop)/1e6 + w.autoCrew()
+	budget := govt.MineRate(w.Govt) * popM * w.SurveyLift(u.Day)
 
 	// Dig what the world's own industry actually wants, richest seam first.
 	// A world does not mine silicate it has no furnace for.
@@ -276,7 +318,32 @@ func (u *Universe) mine(w *World) {
 	// exactly that at the Red capital.
 	for _, p := range w.Civic {
 		for _, m := range econ.Crusts() {
-			need := p.Demand()[m]
+			need := w.MineNeed(m, p.Demand()[m])
+			if need <= 0 || w.Reserve[m] <= 0 || budget <= 0 {
+				continue
+			}
+			got := econ.Transfer(&w.Reserve, &w.Warehouse, m, math.Min(need, budget))
+			budget -= got
+			if got > 0 {
+				u.Journal.Mined.Add(m, got)
+			}
+		}
+	}
+	// Then the mandated lines. A world that was SITED for something — a
+	// capital's arsenal, a hot world's refinery — digs for it before it
+	// digs for whatever its richest seam happens to be, and for exactly the
+	// same reason the gardens ate first: the dig budget is allocated
+	// greedily by the size of the want, so the largest chain on the world
+	// takes the lot.
+	//
+	// Without this the siting rule is decorative. Kestrel stood up as a
+	// melt refinery wanting 142 t of spodumene a day, and its second chain
+	// — an ordinary copper line wanting 177 t of cuprite — took the whole
+	// 135 t budget every day for a year. The refinery never smelted a ton,
+	// the fuel trade never started, and nothing anywhere logged a complaint.
+	for _, p := range w.Mandated() {
+		for _, m := range econ.Crusts() {
+			need := w.MineNeed(m, p.Demand()[m])
 			if need <= 0 || w.Reserve[m] <= 0 || budget <= 0 {
 				continue
 			}
@@ -292,9 +359,12 @@ func (u *Universe) mine(w *World) {
 		if w.Reserve[m] <= 0 {
 			continue
 		}
-		need := w.Wants(m)
-		if need <= 0 {
+		need := w.MineNeed(m, w.Wants(m))
+		if w.Wants(m) <= 0 {
 			need = 0.15 * budget / 5 // a trickle for trade, even unwanted
+		}
+		if need <= 0 {
+			continue
 		}
 		wants = append(wants, want{m, need})
 	}
@@ -331,49 +401,110 @@ func (u *Universe) mine(w *World) {
 func (u *Universe) produce(w *World) {
 	// Civic first, for the same reason the mine digs for them first: the
 	// gardens take their biomass before the mill does.
-	plants := append(append([]*industry.Module(nil), w.Civic...), w.Plant...)
-	for _, plant := range plants {
-		demand := plant.Demand()
-		// The stage runs at whatever fraction of its inputs it can actually
-		// find in the warehouse. Short one ingredient, short the whole run.
-		rate := 1.0
+	for _, p := range w.Civic {
+		u.runPlant(w, p, 1)
+	}
+	// Then the lines this world was SITED for, in mandate order, each
+	// taking what it needs before the next is asked. The mine already
+	// serves them first and it would be incoherent for the factory floor
+	// not to: a capital told to keep an arsenal, and then made to split its
+	// ferrite fifty-fifty with the yard next door, keeps half an arsenal —
+	// which over a year is no arsenal, because the garrison burns rounds
+	// every day. Two of three capitals rated zero the moment the yard was
+	// mandated alongside the munitions line.
+	for _, p := range w.Mandated() {
+		u.runPlant(w, p, 1)
+	}
+	// Then everything else — SHARING whatever they compete for.
+	//
+	// Running the plants in order and letting each take what it wanted was
+	// the obvious way to do this and it was wrong in a way that hid for a
+	// year of simulated time. Two chains on a ferrite world draw from one
+	// warehouse: the ore crusher stands first in the list, asks for the
+	// whole day's ferrite, and gets it, and the steel mill beside it runs
+	// at zero for ever. The world's Describe() prints both plants at full
+	// rate, the bottleneck report shows nothing wrong, and the only
+	// symptom is a galaxy that makes 2,204 tons of ore a day and 35 tons
+	// of steel — against an appetite for steel of nine hundred.
+	//
+	// So a contested input is rationed in proportion to what each plant
+	// asked for. Nobody is served in full and nobody is served last, which
+	// is both fairer and, more to the point, VISIBLE: every plant reports
+	// the same throttle, so the shortage shows up on every line it touches
+	// instead of being absorbed silently by whichever chain sorted second.
+	rest := w.Plant[len(w.Mandated()):]
+	var total econ.Stock
+	for _, p := range rest {
+		d := p.Demand()
 		for m := econ.Material(0); m < econ.Count; m++ {
-			if demand[m] <= 0 {
-				continue
-			}
-			if r := w.Warehouse[m] / demand[m]; r < rate {
-				rate = r
-			}
+			total[m] += d[m]
 		}
-		if rate <= 1e-9 {
+	}
+	var share econ.Stock
+	for m := econ.Material(0); m < econ.Count; m++ {
+		if total[m] <= 0 {
 			continue
 		}
-		// Consume the inputs. Take exactly what the run needs and no more.
-		var drawn float64
+		share[m] = math.Min(1, w.Warehouse[m]/total[m])
+	}
+	for _, p := range rest {
+		rate := 1.0
+		d := p.Demand()
 		for m := econ.Material(0); m < econ.Count; m++ {
-			if demand[m] <= 0 {
-				continue
+			if d[m] > 0 && share[m] < rate {
+				rate = share[m]
 			}
-			drawn += w.Warehouse.Take(m, demand[m]*rate)
 		}
-		// Emit the products.
-		supply := plant.Supply()
-		var made float64
-		for m := econ.Material(0); m < econ.Count; m++ {
-			if supply[m] <= 0 {
-				continue
-			}
-			t := supply[m] * rate
-			w.Warehouse.Add(m, t)
-			u.Journal.Made.Add(m, t)
-			made += t
+		u.runPlant(w, p, rate)
+	}
+}
+
+// runPlant runs one module for a day at up to `rate` of its nameplate.
+//
+// This is where the module composition earns its keep: the plant is a single
+// supermodule, so running it is one loop over its external ports. Whether it
+// is a two-stage mill or a five-stage lithium line makes no difference here,
+// and adding a new industry means adding a Chain, not a case.
+func (u *Universe) runPlant(w *World, plant *industry.Module, rate float64) {
+	demand := plant.Demand()
+	// The stage runs at whatever fraction of its inputs it can actually
+	// find in the warehouse. Short one ingredient, short the whole run.
+	for m := econ.Material(0); m < econ.Count; m++ {
+		if demand[m] <= 0 {
+			continue
 		}
-		// Whatever went in and did not come out is slag. Deriving it from
-		// the two figures we just measured — rather than from the module's
-		// declared Slag — is what makes this exact under any throttle.
-		if waste := drawn - made; waste > 0 {
-			u.Sink.Add(econ.Slag, waste)
+		if r := w.Warehouse[m] / demand[m]; r < rate {
+			rate = r
 		}
+	}
+	if rate <= 1e-9 {
+		return
+	}
+	// Consume the inputs. Take exactly what the run needs and no more.
+	var drawn float64
+	for m := econ.Material(0); m < econ.Count; m++ {
+		if demand[m] <= 0 {
+			continue
+		}
+		drawn += w.Warehouse.Take(m, demand[m]*rate)
+	}
+	// Emit the products.
+	supply := plant.Supply()
+	var made float64
+	for m := econ.Material(0); m < econ.Count; m++ {
+		if supply[m] <= 0 {
+			continue
+		}
+		t := supply[m] * rate
+		w.Warehouse.Add(m, t)
+		u.Journal.Made.Add(m, t)
+		made += t
+	}
+	// Whatever went in and did not come out is slag. Deriving it from the
+	// two figures we just measured — rather than from the module's declared
+	// Slag — is what makes this exact under any throttle.
+	if waste := drawn - made; waste > 0 {
+		u.Sink.Add(econ.Slag, waste)
 	}
 }
 
@@ -425,7 +556,10 @@ func (u *Universe) grow(w *World) {
 	if w.Govt == govt.None || w.Pop <= 0 {
 		return
 	}
-	g := govt.GrowthPerDay(w.Govt)
+	// Dose is a straight tax on growth, and at the breeder threshold it is
+	// very nearly total. A hot world that is fed does not become a city; it
+	// stays the camp it was founded as, which is the point.
+	g := govt.GrowthPerDay(w.Govt) * math.Max(1-w.Rad*radGrowthBite, 0)
 	var rate float64
 	switch {
 	case w.fed >= fedHold:
@@ -450,4 +584,9 @@ const (
 	fedFamine  = 0.35 // below this it shrinks; between, it holds
 	famineRate = 0.10 // a starving world shrinks at most this fraction of its growth rate
 	minPop     = 1000.0
+
+	// radGrowthBite is how much of a world's growth the dose takes at full
+	// scale. Not 1.0: a camp at the worst address in the universe still
+	// creeps upward when it is fed, because somebody keeps signing on.
+	radGrowthBite = 0.94
 )

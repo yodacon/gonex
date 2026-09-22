@@ -150,7 +150,7 @@ func (u *Universe) bestWorksSite(worlds []*World) *World {
 		if w.Seat == SeatPlayer || w.CanBuild(Works) != nil {
 			continue
 		}
-		ranked := industry.Rank(w.Reserve)
+		ranked := industry.Rank(w.Reserve, w.Rad)
 		if len(ranked) <= len(w.Plant) {
 			continue
 		}

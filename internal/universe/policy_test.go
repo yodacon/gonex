@@ -79,6 +79,16 @@ func TestPriorityWorldIsUpgradedFirst(t *testing.T) {
 	u.Exchequer[govt.Red] = 500_000
 	u.ReopenLedger()
 	w := u.Worlds[135]
+	// Stock the steel a battery needs. Red's doctrine buys military first,
+	// every military building costs 200 t of steel on hand, and once the
+	// capitals were mandated to run a yard ALONGSIDE their arsenal there
+	// was no loose steel anywhere in Red space — so the governor silently
+	// bought nothing and this test failed for a reason that has nothing to
+	// do with what it is testing. Whether a colour can afford a battery is
+	// a balance question; whether the priority world is served first is
+	// this test's question, and it needs the materials in place to ask it.
+	w.Warehouse.Add(econ.Steel, 5*militarySteel)
+	u.ReopenBooks()
 	before := w.buildingCount()
 	for d := 0; d < u.Tune.GovernEvery*2; d++ {
 		u.Tick()

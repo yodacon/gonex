@@ -151,7 +151,7 @@ func (w *World) CanBuild(b Building) error {
 		return fmt.Errorf("a %s needs %.0f t of steel on hand; %s has %.0f",
 			b, militarySteel, w.Name, w.Warehouse[econ.Steel])
 	}
-	if b == Works && len(w.Plant) >= len(industry.Rank(w.Reserve)) {
+	if b == Works && len(w.Plant) >= len(industry.Rank(w.Reserve, w.Rad)) {
 		return fmt.Errorf("%s has no further chain its crust can back", w.Name)
 	}
 	return nil
@@ -240,7 +240,33 @@ func systemPair(a, b int) [2]int {
 // the same system, or a chartered lane between their systems. This is
 // OpenFront's rail range, in a map where distance is the jump graph.
 func (u *Universe) shuttleLink(a, b *World) bool {
-	return a.System == b.System || u.Chartered(a.System, b.System)
+	return a.System == b.System || u.Chartered(a.System, b.System) || u.oneJump(a, b)
+}
+
+// oneJump reports whether two worlds are near enough for a shuttle without
+// anybody chartering anything: the same system, or the system next door.
+//
+// The same-type rule was written as "same system, or pay for a Lane", and on
+// a map with several stellars per system that is exactly right — copper
+// crosses a moon system freely and the galaxy never. The RECOVERED gazetteer
+// has one stellar in each of its hundred and nine systems. So "same system"
+// was never true for any pair of worlds in the game, the governors rarely
+// bought a Lane, and the consequence was total: copper, silicon, polymer,
+// grain and pure lithium could not move ANYWHERE, ever. Electronics worlds
+// with no cuprite of their own sat idle for ever, chips were made at
+// thirty-five tons a day against an appetite in the hundreds, and the
+// shipyards — which eat chips — pressed not one ton of plate in two years.
+//
+// Widening "local" to one jump keeps the whole point of the rule (an
+// intermediate does not cross the galaxy; it is a neighbourhood good) and
+// makes it expressible on the map the game actually has. A Lane charter
+// still buys what it always bought: a neighbourhood where there wasn't one.
+//
+// It reads the distance rather than a hop table because ChartLanes has
+// already written the hop count into every lane's length, and one fact in
+// one place is worth more than a second table that can disagree with it.
+func (u *Universe) oneJump(a, b *World) bool {
+	return u.Fleet.Lane(a.Stellar, b.Stellar).Length <= inSystemMm+jumpMm+0.5
 }
 
 // buildingCount is how many levels have been BOUGHT here. Genesis

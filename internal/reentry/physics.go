@@ -116,7 +116,11 @@ func stateAt(h, v float64, veh Vehicle, prof Profile, b, feed float64) Point {
 	a := math.Sqrt(1.4 * 287.05 * tInf)
 	p.Mach = v / a
 	lam := 8.11e-8 / rho
-	p.Kn = lam / (2 * veh.NoseRadius)
+	// The injection ring's seed raises the local density the field has to
+	// grip, which collapses the local Knudsen number. It is the only rung
+	// of the ladder that helps in the rarefied phase, where there is
+	// nothing for a magnetic field to push against however hard it pushes.
+	p.Kn = lam / (2 * veh.NoseRadius) / veh.Conf.KnudsenRelief()
 	p.QDyn = 0.5 * rho * v * v
 
 	// heating, bare
@@ -167,11 +171,19 @@ func stateAt(h, v float64, veh Vehicle, prof Profile, b, feed float64) Point {
 	// MHD interaction
 	phi := 1 / (1 + math.Pow(p.Kn/knContinuum, 2))
 	sigM := sigE * phi
-	p.InteractionQ = sigM * b * b * veh.NoseRadius / math.Max(rho*v, 1e-12)
+	// The phased array drives current in the shock layer rather than waiting
+	// for the flow to induce it, so a driven envelope has authority in
+	// plasma too cold and too thin to give it away.
+	p.InteractionQ = sigM * b * b * veh.NoseRadius / math.Max(rho*v, 1e-12) * veh.Conf.DrivenQ()
 	p.Gate = phi * p.InteractionQ / (1 + p.InteractionQ)
 
 	// magnetopause standoff and its consequences
-	pmag := b * b / (2 * mu0)
+	// A bare dipole is not a closed bottle: it has two polar cusps where the
+	// field lines run into the vehicle and the flow funnels straight down
+	// them. Only the share of B^2/2mu0 that is NOT escorting flow onto the
+	// nose is standing it off, so plugging the cusps with a multipole ring
+	// is a straight gain on the pressure that does the work.
+	pmag := b * b / (2 * mu0) * veh.Conf.PressureGain()
 	pflow := rho * v * v
 	rmpR := 1.0
 	if b > 0 {
@@ -184,7 +196,12 @@ func stateAt(h, v float64, veh Vehicle, prof Profile, b, feed float64) Point {
 
 	aBody := math.Pi * veh.Diameter * veh.Diameter / 4
 	aMag := math.Pi * reff * reff
-	p.DragFactor = 1 + kLeak*math.Max(0, aMag/aBody-1)
+	// What leaks through the cusps loads the wake, and that is most of what
+	// an inflated envelope costs in drag. Sealing the bottle is worth far
+	// more here than it is in stand-off — 2x the magnetic pressure is only
+	// 12% more radius, because of the sixth root, but it is two thirds less
+	// leak.
+	p.DragFactor = 1 + kLeak*veh.Conf.LeakRelief()*math.Max(0, aMag/aBody-1)
 
 	// power ledger: phased array + cryo + seed + housekeeping. The raw
 	// array term (zeta% of captured enthalpy flux) reaches hundreds of MW
@@ -196,8 +213,12 @@ func stateAt(h, v float64, veh Vehicle, prof Profile, b, feed float64) Point {
 	pCryo := 0.0
 	if b > 0 {
 		aDew := 4 * math.Pi * veh.NoseRadius * veh.NoseRadius
-		pCryo = 3e-4 * 5.670374419e-8 * math.Pow(p.WallTemp, 4) * aDew * 50
+		pCryo = 3e-4 * 5.670374419e-8 * math.Pow(p.WallTemp, 4) * aDew * 50 * veh.Conf.CryoLoad()
 	}
-	p.PowerDraw = pArr + pCryo + feed*2.5e6 + 3.5e4
+	// The confinement hardware is on the ledger like everything else: the
+	// array is driving current against a resistive plasma and the ring is
+	// accelerating mass. Steering the pillow is not free, and the budget
+	// gauge is where the pilot finds that out.
+	p.PowerDraw = pArr + pCryo + feed*2.5e6 + 3.5e4 + veh.Conf.Watts(p.Gate)
 	return p
 }

@@ -231,6 +231,39 @@ func Describe(c Color) string {
 		MinFleet(c))
 }
 
+// FromGazetteer maps a 1997 polity name onto one of the three colours.
+//
+// The recovered galaxy files its worlds under the names Escape Velocity and
+// ConEx used, and until now nothing read them: every port outside the three
+// hand-placed home systems was seeded Neutral, which left the trifecta's
+// balance proof describing a map that did not exist. Over a 200-day run on
+// the full gazetteer Red landed 6.6 kt against Green's 15.7 kt, and the
+// asymmetry was in the SHAPE OF THE MAP rather than in the table.
+//
+// The mapping is the lore's, not an arbitrary assignment:
+//
+//	Consolidated Express → Red    — ConEx itself: the freight polity,
+//	                                best logistics, best guns, no industry
+//	Confederation        → Blue   — Cenron: the established core, the
+//	                                fortress, the factories
+//	Rebellion            → Green  — Exeon: the frontier, the growers,
+//	                                the miners
+//
+// Pirates, the Cydonians, the Letheans and the unexplored rim stay None.
+// They are the neutral ground every colour may trade with, and the hostile
+// worlds among them are the free ports of the fuel trade.
+func FromGazetteer(name string) Color {
+	switch name {
+	case "Consolidated Express":
+		return Red
+	case "Confederation":
+		return Blue
+	case "Rebellion":
+		return Green
+	}
+	return None
+}
+
 // Parse reads a colour by name or polity, case-insensitively.
 func Parse(s string) (Color, bool) {
 	switch s {

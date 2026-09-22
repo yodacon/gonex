@@ -191,6 +191,13 @@ type Tuning struct {
 	GovernEvery      int     // days between government decisions
 	ExpandEvery      int     // days between looks for a world to take
 	LeaveShare       float64 // share of the purse a crew on leave spends
+
+	// The merchant marine. See merchantfleet.go: the fleet is sized by the
+	// map at genesis and by the board thereafter.
+	OpeningHulls int // hulls per world held, at genesis
+	FleetCap     int // most hulls per world held
+	CommissionAt int // berth pressure (cr of unserved margin per hull) to press plate
+	LayUpAt      int // pressure below which a yard breaks one up
 }
 
 // DefaultTuning is the measured baseline.
@@ -202,6 +209,10 @@ func DefaultTuning() Tuning {
 		GovernEvery:      7,
 		ExpandEvery:      21,
 		LeaveShare:       0.3,
+		OpeningHulls:     defaultOpeningHulls,
+		FleetCap:         defaultFleetCap,
+		CommissionAt:     defaultCommissionAt,
+		LayUpAt:          defaultLayUpAt,
 	}
 }
 
@@ -220,8 +231,16 @@ func (t *Tuning) Set(name string, v float64) error {
 		t.ExpandEvery = max(1, int(v))
 	case "leave":
 		t.LeaveShare = v
+	case "opening":
+		t.OpeningHulls = max(1, int(v))
+	case "cap":
+		t.FleetCap = max(1, int(v))
+	case "press":
+		t.CommissionAt = int(v)
+	case "layup":
+		t.LayUpAt = int(v)
 	default:
-		return fmt.Errorf("no knob %q (purse, tax, reserve, govern, expand, leave)", name)
+		return fmt.Errorf("no knob %q (purse, tax, reserve, govern, expand, leave, opening, cap, press, layup)", name)
 	}
 	return nil
 }

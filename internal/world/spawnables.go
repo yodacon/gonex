@@ -134,7 +134,7 @@ func (it *Item) Update(w *World, dt float64) {
 // len(market.Commodities); world cannot import market without dragging the
 // trading UI into the simulation, so the width is pinned here and asserted
 // against the market board in the app's tests.
-const CommodityCount = 6
+const CommodityCount = 8
 
 type Planet struct {
 	Body
