@@ -57,6 +57,16 @@ type Entity interface {
 
 type World struct {
 	Entities []Entity
+
+	// grid is the broadphase, rebuilt at the top of every Update. It is
+	// what stops ForEachNear from being a walk over everything in the sky.
+	grid broadphase
+
+	// ix indexes the entity list by type, rebuilt in the same pass. It is
+	// what stops every nearest-ship and nearest-planet query from type-
+	// asserting its way down the whole list.
+	ix indices
+
 	MapW     float64
 	MapH     float64
 
@@ -106,6 +116,12 @@ func (w *World) Add(e Entity) { w.Entities = append(w.Entities, e) }
 
 // Update advances the simulation one fixed step.
 func (w *World) Update(dt float64) {
+	// The broadphase is a snapshot of where everything is BEFORE anything
+	// moves this frame; see broadphase.go for why the query radius is
+	// derived from the fastest entity rather than fixed at one cell.
+	w.grid.build(w.Entities, dt, w.MapW, w.MapH)
+	w.ix.rebuild(w.Entities)
+
 	// Uniform movement first, matching entities_ProcessMovement.
 	for _, e := range w.Entities {
 		if e.Alive() {
@@ -129,26 +145,71 @@ func (w *World) Update(dt float64) {
 	w.Entities = live
 }
 
-// ForEachNear calls fn for every other live entity within CollisionRange.
-func (w *World) ForEachNear(src Entity, fn func(Entity)) {
+// allShips is the uncached fallback for callers that run outside the update
+// loop, where no index has been built yet.
+func (w *World) allShips() []*Ship {
+	out := make([]*Ship, 0, len(w.Entities))
 	for _, e := range w.Entities {
-		if e != src && e.Alive() && e.Pos().Sub(src.Pos()).Len() < CollisionRange {
-			fn(e)
+		if s, ok := e.(*Ship); ok {
+			out = append(out, s)
 		}
 	}
+	return out
+}
+
+// allPlanets is the same fallback for the planet searches.
+func (w *World) allPlanets() []*Planet {
+	out := make([]*Planet, 0, 16)
+	for _, e := range w.Entities {
+		if p, ok := e.(*Planet); ok {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// ForEachNear calls fn for every other live entity within CollisionRange.
+//
+// Compares SQUARED distances. Every missile, item and wreck in the sky runs
+// this sweep every frame, so the square root it used to take was the single
+// most expensive instruction in the game.
+func (w *World) ForEachNear(src Entity, fn func(Entity)) {
+	p := src.Pos()
+	const r2 = CollisionRange * CollisionRange
+	if !w.grid.built {
+		// No snapshot yet — a caller outside the update loop, or a test
+		// driving entities by hand. Fall back to the honest linear scan.
+		for _, e := range w.Entities {
+			if e != src && e.Alive() && e.Pos().Sub(p).LenSq() < r2 {
+				fn(e)
+			}
+		}
+		return
+	}
+	w.grid.near(p, func(e Entity) {
+		if e != src && e.Alive() && e.Pos().Sub(p).LenSq() < r2 {
+			fn(e)
+		}
+	})
 }
 
 // ClosestEnemy finds the nearest live ship on a different team.
 func (w *World) ClosestEnemy(s *Ship) *Ship {
-	nearestDist := w.MapW
+	// Squared throughout: the nearest of a set by distance is the nearest of
+	// it by distance squared, so the root is never needed.
+	nearestSq := w.MapW * w.MapW
+	p := s.Pos()
 	var nearest *Ship
-	for _, e := range w.Entities {
-		o, ok := e.(*Ship)
-		if !ok || o == s || o.Team == s.Team || !o.Alive() || o.Docked() {
+	ships := w.ix.ships
+	if len(ships) == 0 {
+		ships = w.allShips() // no snapshot yet: a test driving entities by hand
+	}
+	for _, o := range ships {
+		if o == s || o.Team == s.Team || !o.Alive() || o.Docked() {
 			continue // a ship on a pad cannot be hit, so it is not a target
 		}
-		if d := o.Pos().Sub(s.Pos()).Len(); d < nearestDist {
-			nearestDist, nearest = d, o
+		if d := o.Pos().Sub(p).LenSq(); d < nearestSq {
+			nearestSq, nearest = d, o
 		}
 	}
 	return nearest

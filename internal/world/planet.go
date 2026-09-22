@@ -329,15 +329,18 @@ func (w *World) ClosestPort(from gmath.Vec2, team Team) *Planet {
 func (w *World) closest(from gmath.Vec2, team Team, supplied bool) *Planet {
 	var best *Planet
 	bestD := math.MaxFloat64
-	for _, e := range w.Entities {
-		p, ok := e.(*Planet)
-		if !ok || (team != TeamNone && p.Team != team) {
+	planets := w.ix.planets
+	if len(planets) == 0 {
+		planets = w.allPlanets() // no snapshot yet
+	}
+	for _, p := range planets {
+		if team != TeamNone && p.Team != team {
 			continue
 		}
 		if supplied && (p.Starving() || len(p.Pad) >= p.Berths()) {
 			continue
 		}
-		if d := p.P.Sub(from).Len(); d < bestD {
+		if d := p.P.Sub(from).LenSq(); d < bestD {
 			best, bestD = p, d
 		}
 	}

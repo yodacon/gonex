@@ -61,6 +61,12 @@ type Universe struct {
 	Extern []func() econ.Stock
 
 	Rng *rand.Rand
+
+	// Scratch buffers for the route scan, reused between days so that
+	// ranking four thousand routes does not allocate four thousand routes'
+	// worth of garbage every simulated day.
+	sortKeys    []routeKey
+	sortScratch []Route
 }
 
 // New seeds a universe from a list of ports.

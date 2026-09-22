@@ -99,6 +99,18 @@ type World struct {
 	SurveyUntil int
 	surveyBonus float64
 
+	// surplusMask and needMask are which materials this world has spare and
+	// which it is short of, one bit per material. Recomputed once per route
+	// scan by refreshTradeMasks; see FindRoutes for why they exist.
+	surplusMask, needMask uint32
+
+	// tradeWants is this world's whole industrial demand vector, cached for
+	// the life of one route scan. Wants(m) walks every plant and takes a
+	// 30-wide Demand() vector BY VALUE from each — fine once, ruinous when
+	// the route scan asks it thirty times per world and then twice more per
+	// candidate pair.
+	tradeWants econ.Stock
+
 	// mandated is how many of the leading entries in Plant stand under a
 	// Mandate rather than under Rank. The mine reads it: a mandated line
 	// gets first call on the dig budget, because a world that was TOLD to
@@ -496,6 +508,25 @@ func (w *World) Wants(m econ.Material) float64 {
 	if m.Crust() {
 		for _, p := range w.Civic {
 			t += p.Demand()[m]
+		}
+	}
+	return t
+}
+
+// wantsAll is the whole demand vector in one pass over the plants, which is
+// what Wants(m) would cost thirty times over.
+func (w *World) wantsAll() econ.Stock {
+	var t econ.Stock
+	for _, p := range w.Plant {
+		d := p.Demand()
+		for m := econ.Material(0); m < econ.Count; m++ {
+			t[m] += d[m]
+		}
+	}
+	for _, p := range w.Civic {
+		d := p.Demand()
+		for m := econ.FirstCrust; m <= econ.LastCrust; m++ {
+			t[m] += d[m]
 		}
 	}
 	return t

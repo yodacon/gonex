@@ -3,6 +3,7 @@ package universe
 import (
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 
 	"yodacon.org/gonex/internal/econ"
@@ -25,6 +26,10 @@ type Route struct {
 	Tons     float64 // how much is actually available and wanted
 	Margin   int     // per ton, before fuel
 	Length   float64 // megametres
+
+	// rank is the sort key, computed once per route rather than twice per
+	// comparison. See rankRoutes.
+	rank float64
 }
 
 // Value is the whole run's gross margin — what makes a long haul of something
@@ -44,15 +49,103 @@ func (r Route) String() string {
 // territory economically meaningful — taking a world does not just deny it to
 // the enemy, it opens a market to you.
 func (u *Universe) FindRoutes(c govt.Color, limit int) []Route {
+	// Scan the map ONCE for who has a surplus of what and who is short of
+	// what, as two bitmasks per world, then pair the worlds up.
+	//
+	// The obvious loop — every origin, every destination, every material —
+	// tests 109 x 109 x 26 triples and throws away 99% of them on the two
+	// cheap tests at the top. Measured on the real gazetteer that is 36.8 ms
+	// PER SIMULATED DAY, which is 2.2 frames of a 60 Hz budget for one day,
+	// and the catch-up after a restored save is bounded at 400 days: a
+	// fourteen-second freeze. The economy runs on the main thread, so this
+	// was by a wide margin the most expensive thing in the game.
+	//
+	// With masks, a pair of worlds that could not possibly trade is rejected
+	// by a single AND, and the material loop runs only over the bits they
+	// actually have in common. Iteration order is unchanged — origin, then
+	// destination, then material ascending — so the ranked result is
+	// identical, ties included.
+	u.refreshTradeMasks(c)
 	var out []Route
 	for _, fromID := range u.order {
-		out = u.routesFrom(c, u.Worlds[fromID], out)
+		src := u.Worlds[fromID]
+		if src.surplusMask == 0 {
+			continue
+		}
+		for _, toID := range u.order {
+			if toID == fromID {
+				continue
+			}
+			dst := u.Worlds[toID]
+			common := src.surplusMask & dst.needMask
+			if common == 0 {
+				continue
+			}
+			for m := econ.Material(0); m < econ.Slag; m++ {
+				if common&(1<<uint(m)) == 0 {
+					continue
+				}
+				if r, ok := u.route(c, src, dst, m); ok {
+					out = append(out, r)
+				}
+			}
+		}
 	}
 	u.rankRoutes(c, out)
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
 	}
 	return out
+}
+
+// refreshTradeMasks records, for every world this colour may deal with, which
+// materials it has spare and which it is short of. One linear pass over the
+// map replaces the two tests that used to run inside the innermost loop.
+func (u *Universe) refreshTradeMasks(c govt.Color) {
+	for _, id := range u.order {
+		w := u.Worlds[id]
+		w.surplusMask, w.needMask = 0, 0
+		if !u.canTrade(c, w.Govt) {
+			continue
+		}
+		w.tradeWants = w.wantsAll()
+		for m := econ.Material(0); m < econ.Slag; m++ {
+			if w.Shop[m] <= 0 {
+				continue
+			}
+			want := w.tradeWants[m]
+			if w.Warehouse[m]-want*reserveDays >= minLoad {
+				w.surplusMask |= 1 << uint(m)
+			}
+			if want*reserveDays+w.appetite(m)*reserveDays-w.Warehouse[m] >= minLoad {
+				w.needMask |= 1 << uint(m)
+			}
+		}
+	}
+}
+
+// route builds the one run src → dst in m, or reports that there is none.
+// It is the body of the old innermost loop, unchanged.
+func (u *Universe) route(c govt.Color, src, dst *World, m econ.Material) (Route, bool) {
+	buy, sell := src.Shop[m], dst.Shop[m]
+	if buy <= 0 || sell <= buy {
+		return Route{}, false
+	}
+	if shuttleOnly(m) && !u.shuttleLink(src, dst) {
+		return Route{}, false
+	}
+	spare := src.Warehouse[m] - src.tradeWants[m]*reserveDays
+	need := dst.tradeWants[m]*reserveDays + dst.appetite(m)*reserveDays - dst.Warehouse[m]
+	if spare < minLoad || need < minLoad {
+		return Route{}, false
+	}
+	lane := u.Fleet.Lane(src.Stellar, dst.Stellar)
+	return Route{
+		Mat: m, From: src.Stellar, To: dst.Stellar,
+		Buy: buy, Sell: sell, Margin: sell - buy,
+		Tons:   math.Min(spare, need),
+		Length: lane.Length,
+	}, true
 }
 
 // RoutesFrom is everything worth lifting out of ONE port today, ranked.
@@ -127,8 +220,22 @@ func (u *Universe) routesFrom(c govt.Color, src *World, out []Route) []Route {
 }
 
 // rankRoutes sorts a route list best-first, in place.
+//
+// Decorate, sort, undecorate. The weight of a route is a fixed property of
+// it — margin per megametre, with OpenFront's near and ally biases — and
+// computing it inside the comparator meant computing it twice for every
+// comparison, which on four thousand routes is about a hundred thousand
+// evaluations of a function that does THREE MAP LOOKUPS (both worlds and
+// the lane). Profiling the economy tick put the comparator and the sort
+// machinery at 55% of the whole day.
+//
+// slices.SortStableFunc rather than sort.SliceStable for the second half of
+// it: the reflective version swaps elements through reflectlite.Swapper and
+// typedmemmove, which was another fifth of the time on its own. Both are
+// stable, so ties keep insertion order and the result is unchanged.
 func (u *Universe) rankRoutes(c govt.Color, out []Route) {
-	weight := func(r Route) float64 {
+	for i := range out {
+		r := &out[i]
 		// Margin per megametre: a fat spread across the galaxy is worth less
 		// than a decent one next door, because the hull could have run the
 		// short one three times. Then OpenFront's two biases: twice the
@@ -142,15 +249,43 @@ func (u *Universe) rankRoutes(c govt.Color, out []Route) {
 		if dst.Govt != c && u.Relation(c, dst.Govt) == Ally {
 			v *= allyBias
 		}
-		return v
+		r.rank = v
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		a, b := weight(out[i]), weight(out[j])
-		if a != b {
-			return a > b
+	// Sort a 16-byte key, not the 72-byte Route. A stable merge sort moves
+	// its elements a great deal, and moving nine words where two would do
+	// was a sixth of the whole tick.
+	if cap(u.sortKeys) < len(out) {
+		u.sortKeys = make([]routeKey, len(out))
+	}
+	keys := u.sortKeys[:len(out)]
+	for i := range out {
+		keys[i] = routeKey{rank: out[i].rank, mat: out[i].Mat, idx: int32(i)}
+	}
+	slices.SortStableFunc(keys, func(a, b routeKey) int {
+		if a.rank != b.rank {
+			if a.rank > b.rank {
+				return -1
+			}
+			return 1
 		}
-		return out[i].Mat < out[j].Mat
+		return int(a.mat) - int(b.mat)
 	})
+	if cap(u.sortScratch) < len(out) {
+		u.sortScratch = make([]Route, len(out))
+	}
+	scratch := u.sortScratch[:len(out)]
+	for i, k := range keys {
+		scratch[i] = out[k.idx]
+	}
+	copy(out, scratch)
+}
+
+// routeKey is the sort payload: everything the comparator reads, and the
+// index of the route it came from.
+type routeKey struct {
+	rank float64
+	idx  int32
+	mat  econ.Material
 }
 
 // canTrade reports whether a hull of colour c will dock at a port held by

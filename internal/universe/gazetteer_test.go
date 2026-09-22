@@ -31,7 +31,7 @@ import (
 //	GAZ=1 go test ./internal/universe -run TestGazetteer -v
 //	GAZ=1 GAZDAYS=1200 go test ./internal/universe -run TestGazetteer -v
 
-func gazetteerPorts(t *testing.T) []Port {
+func gazetteerPorts(t testing.TB) []Port {
 	t.Helper()
 	g, err := galaxy.Load()
 	if err != nil {
