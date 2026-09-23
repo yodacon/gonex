@@ -93,9 +93,21 @@ func TestTheGameIsSeededFromTheRealMap(t *testing.T) {
 	if err != nil {
 		t.Skipf("no gazetteer: %v", err)
 	}
-	ports := gazetteerPorts(t, g)
+	ports := universe.Triad(gazetteerPorts(t, g))
 	if len(ports) < 50 {
 		t.Fatalf("only %d ports in the gazetteer", len(ports))
+	}
+
+	// Every body must have a neighbourhood — the whole point of the triad.
+	bySystem := map[int]int{}
+	for _, p := range ports {
+		bySystem[p.System]++
+	}
+	for sys, n := range bySystem {
+		if n < 3 {
+			t.Errorf("system %d has %d bodies; the same-type rule needs a neighbourhood", sys, n)
+			break
+		}
 	}
 
 	// Three prongs, not a sea of neutrals.
@@ -114,7 +126,7 @@ func TestTheGameIsSeededFromTheRealMap(t *testing.T) {
 
 	u := universe.New(20260922, ports, 16)
 	u.ChartLanes(func(from, to int) int {
-		a, b := g.Stellars[from], g.Stellars[to]
+		a, b := g.Stellars[universe.HostOf(from)], g.Stellars[universe.HostOf(to)]
 		if a == nil || b == nil {
 			return -1
 		}

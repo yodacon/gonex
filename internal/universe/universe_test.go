@@ -13,17 +13,17 @@ import (
 // the shape triforce.xml actually has: three clusters and contested ground.
 func testPorts() []Port {
 	return []Port{
-		{133, "ConEx", 133, 4_200_000, govt.Red},
-		{134, "ConEx Yards", 133, 900_000, govt.Red},
-		{135, "ConEx Deep", 133, 600_000, govt.Red},
-		{238, "Exeon", 238, 4_000_000, govt.Green},
-		{239, "Exeon Yards", 238, 900_000, govt.Green},
-		{240, "Exeon Deep", 238, 600_000, govt.Green},
-		{235, "Cenron", 235, 4_100_000, govt.Blue},
-		{236, "Cenron Yards", 235, 900_000, govt.Blue},
-		{237, "Cenron Deep", 235, 600_000, govt.Blue},
-		{300, "Midpoint", 133, 1_200_000, govt.None},
-		{301, "Kestrel", 133, 1_200_000, govt.None},
+		{Stellar: 133, Name: "ConEx", System: 133, Pop: 4_200_000, Govt: govt.Red},
+		{Stellar: 134, Name: "ConEx Yards", System: 133, Pop: 900_000, Govt: govt.Red},
+		{Stellar: 135, Name: "ConEx Deep", System: 133, Pop: 600_000, Govt: govt.Red},
+		{Stellar: 238, Name: "Exeon", System: 238, Pop: 4_000_000, Govt: govt.Green},
+		{Stellar: 239, Name: "Exeon Yards", System: 238, Pop: 900_000, Govt: govt.Green},
+		{Stellar: 240, Name: "Exeon Deep", System: 238, Pop: 600_000, Govt: govt.Green},
+		{Stellar: 235, Name: "Cenron", System: 235, Pop: 4_100_000, Govt: govt.Blue},
+		{Stellar: 236, Name: "Cenron Yards", System: 235, Pop: 900_000, Govt: govt.Blue},
+		{Stellar: 237, Name: "Cenron Deep", System: 235, Pop: 600_000, Govt: govt.Blue},
+		{Stellar: 300, Name: "Midpoint", System: 133, Pop: 1_200_000, Govt: govt.None},
+		{Stellar: 301, Name: "Kestrel", System: 133, Pop: 1_200_000, Govt: govt.None},
 	}
 }
 
@@ -237,7 +237,7 @@ func TestTheTrifectaChangesOutcomes(t *testing.T) {
 	// One world each, identical population and stellar-independent seed, so
 	// the only difference is the flag over it.
 	grow := func(c govt.Color) int {
-		u := New(77, []Port{{500, "Test", 500, 1_000_000, c}}, 0)
+		u := New(77, []Port{{Stellar: 500, Name: "Test", System: 500, Pop: 1_000_000, Govt: c}}, 0)
 		// Stock the larder. A lone world with no trade partners starves, and
 		// a starving world does not grow whoever holds it — which would make
 		// this a test of famine rather than a test of the growth axis.
@@ -269,7 +269,7 @@ func TestTheTrifectaChangesOutcomes(t *testing.T) {
 // silently — the economic consequence of losing a lane has to be visible.
 func TestAStarvedWorldStopsGrowing(t *testing.T) {
 	// A world with nothing in the warehouse and no farm cannot eat.
-	u := New(9, []Port{{600, "Rock", 600, 2_000_000, govt.Green}}, 0)
+	u := New(9, []Port{{Stellar: 600, Name: "Rock", System: 600, Pop: 2_000_000, Govt: govt.Green}}, 0)
 	w := u.Worlds[600]
 	w.Warehouse = econ.Stock{}
 	w.Reserve = econ.Stock{}

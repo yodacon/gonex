@@ -62,11 +62,11 @@ func berthPressure(routes []Route, hulls int) float64 {
 // so the console can turn them while a game is running.
 const (
 	// defaultOpeningHulls is hulls per world held, at genesis.
-	defaultOpeningHulls = 3
+	defaultOpeningHulls = 5
 	// defaultFleetCap is the most hulls a colour may have per world held.
 	// The ceiling is per-world rather than absolute so that losing half
 	// your territory eventually costs you half your merchant marine.
-	defaultFleetCap = 5
+	defaultFleetCap = 8
 	// defaultCommissionAt is the berth pressure above which a yard presses
 	// plate, in credits of unserved margin per hull.
 	defaultCommissionAt = 90_000

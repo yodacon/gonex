@@ -36,6 +36,18 @@ type World struct {
 	Reserve   econ.Stock // still in the crust
 	Warehouse econ.Stock // dug, refined or landed, and for sale
 
+	// ord is this world's index in Universe.order, so a lane length can be
+	// read out of a flat array instead of hashed out of a map. With 327
+	// bodies the lane map holds fifty-three thousand entries and the route
+	// scan probes it sixty thousand times a day.
+	ord int
+
+	// Kind is planet, station or field, and Host is the planet a minted
+	// body belongs to. Every rule that differs between the three keys off
+	// Kind, so there is exactly one place to look for the differences.
+	Kind BodyKind
+	Host int
+
 	// Rad is the world's dose rate, 0..1, drawn at genesis from the same
 	// number as its spodumene seam. It decides three things and nothing
 	// else: which chains may stand up here (industry.Chain.MinRad), how
@@ -143,9 +155,11 @@ func (s Seat) String() string {
 // Seed builds a world's genesis state from the universe seed. Everything —
 // what is in the ground, what is in the warehouse, which industries stood
 // up — follows from (seed, stellar) and the government that holds it.
-func Seed(seed int64, stellar int, name string, system int, pop int, c govt.Color) *World {
+func Seed(seed int64, p Port) *World {
+	stellar, pop, c := p.Stellar, p.Pop, p.Govt
 	w := &World{
-		Stellar: stellar, Name: name, System: system, Pop: pop, Govt: c,
+		Stellar: stellar, Name: p.Name, System: p.System, Pop: pop, Govt: c,
+		Kind:    p.Kind, Host: p.Host,
 		Credits: pop / 4,
 		Tariff:  neutralTariff,
 		fed:     1,
@@ -154,6 +168,15 @@ func Seed(seed int64, stellar int, name string, system int, pop int, c govt.Colo
 		w.Tariff = colourTariff
 	}
 	e := econ.Endow(seed, stellar, pop, govt.MineRate(c))
+	switch p.Kind {
+	case BodyField:
+		// A rock with nobody on it, holding what its planet does not.
+		e = econ.Complement(seed, stellar, p.Host, hostPopFor(p), govt.MineRate(c))
+	case BodyStation:
+		// An orbital has no ground at all — no reserve, no surface stock,
+		// and therefore nothing to sell that it did not buy first.
+		e.Reserve, e.Warehouse, e.Rad = econ.Stock{}, econ.Stock{}, 0
+	}
 	w.Reserve, w.Warehouse, w.Rad = e.Reserve, e.Warehouse, e.Rad
 	// A hot world is a camp, not a city. The gazetteer's population is what
 	// grew there in a universe with no spodumene under it; this is the
@@ -187,6 +210,14 @@ func Seed(seed int64, stellar int, name string, system int, pop int, c govt.Colo
 	// whatever the nearest refinery happens to pour.
 	if line := industry.LineFor(w.Rad, stellar%2 == 1); line != "" {
 		w.Mandate = append(w.Mandate, line)
+	}
+	// An orbital is a factory with no mine: Rank has no crust to work from,
+	// so its industry has to be MANDATED. standUpIndustry already knows how
+	// to stand up a chain's processing steps alone and buy every input —
+	// the path a capital with no ferrite uses for its arsenal — and that is
+	// exactly what a station is.
+	if p.Kind == BodyStation && pop > 0 {
+		w.Mandate = append(w.Mandate, stationLine(p.Host))
 	}
 	w.standUpIndustry()
 	w.stake()
@@ -239,6 +270,20 @@ const (
 	stakeDays   = 45.0 // long enough to sell the first fuel and be paid
 )
 
+// hostPopFor recovers the population of the planet a minted body belongs
+// to, which is what its seams are scaled against — a field beside a
+// metropolis is a bigger rock than one beside an outpost.
+func hostPopFor(p Port) int {
+	if p.Kind == BodyStation {
+		return p.Pop * stationShare
+	}
+	// A field carries no population of its own, so the port list cannot
+	// tell us; scale it against a median world instead of nothing at all.
+	return fieldHostPop
+}
+
+const fieldHostPop = 3_000_000
+
 // endow stands a building up at genesis: built, but not bought.
 func (w *World) endow(b Building) {
 	w.Built[b]++
@@ -268,8 +313,35 @@ func (w *World) Genesis() econ.Stock { return w.Reserve.Plus(w.Warehouse) }
 // already make the obvious choice.
 func (w *World) standUpIndustry() {
 	w.Plant = nil
+	// A field is a SOURCE, and nothing else. Rank looks only at what is in
+	// the ground, and a field is all ground — so left to itself every rock
+	// on the map stood up two factories and became a competitor to the
+	// worlds it exists to supply. Worse, having industry gave it Wants,
+	// which took it off the stockpile rule in mine() and set it digging
+	// against demand its own idle plants would never satisfy: 2.9 megatonnes
+	// of finite reserve buried in heaps in one simulated year.
+	//
+	// No plant, no civic, no appetite. What a field has is seams and a mass
+	// driver, and the only things that happen here are a pit working to a
+	// stockpile and a hull coming to collect.
+	// ...with ONE exception, and it is the one the fuel trade is built on.
+	// A field may not RANK a chain, but it may still be MANDATED one: a hot
+	// rock is exactly the licensed site the siting rule is looking for, and
+	// refusing it a refinery threw away two thirds of the galaxy's breeder
+	// capacity the moment fields stopped being factories.
+	fieldOnly := w.Kind == BodyField
+	if fieldOnly {
+		w.Civic = nil
+		if len(w.Mandate) == 0 {
+			w.mandated = 0
+			return
+		}
+	}
 	ranked := industry.Rank(w.Reserve, w.Rad)
 	slots := maxChains + w.Built[Works]
+	if fieldOnly {
+		slots = len(w.Mandate) // a mandate, and nothing it chose for itself
+	}
 	// Mandated chains take slots first, in mandate order, if the crust can
 	// back them; the rank fills what is left.
 	var chosen []industry.Chain
@@ -300,7 +372,7 @@ func (w *World) standUpIndustry() {
 		}
 	}
 	for _, ch := range ranked {
-		if len(chosen) >= slots {
+		if fieldOnly || len(chosen) >= slots {
 			break
 		}
 		dup := false
@@ -376,7 +448,9 @@ func (w *World) standUpIndustry() {
 		// subsistence share of the ration: appetite / (0.75 · 0.90 · yield).
 		garden = w.appetite(econ.Rations) * gardenShare / (0.75 * 0.90)
 	}
-	w.Civic = industry.Civic(garden, w.organicAppetite()*1.1, civicM*breakerRate, w.Govt)
+	if !fieldOnly {
+		w.Civic = industry.Civic(garden, w.organicAppetite()*1.1, civicM*breakerRate, w.Govt)
+	}
 }
 
 // autoCrew is the workforce a hostile world does not have, expressed in
@@ -389,7 +463,17 @@ func (w *World) standUpIndustry() {
 // under the only worlds with nobody to work them, and the lithium trade
 // would never start. It scales with dose because the hotter the world, the
 // more of its industry was built to run unmanned in the first place.
-func (w *World) autoCrew() float64 { return autoCrew * w.Rad }
+func (w *World) autoCrew() float64 {
+	crew := autoCrew * w.Rad
+	if w.Kind == BodyField {
+		// A field is ALL machine — there is nobody on it at any dose — so
+		// its whole workforce is this term. Without it the richest seams on
+		// the map would sit under the only bodies with no one to work them,
+		// which is the same trap the hostile worlds were in.
+		crew += fieldCrew
+	}
+	return crew
+}
 
 // organicAppetite is the tonnage of compost a day's eating leaves.
 func (w *World) organicAppetite() float64 {
@@ -424,6 +508,9 @@ func (w *World) Housing() float64 {
 // more legible, and the landing city more honest, with a camp that is a
 // tenth of a world rather than a thousandth of one.
 func (w *World) PopCeiling() float64 {
+	if w.Kind == BodyField {
+		return 0 // nothing lives on a rock
+	}
 	if w.Rad <= 0 {
 		return popCeiling
 	}

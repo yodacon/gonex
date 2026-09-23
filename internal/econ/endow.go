@@ -216,3 +216,71 @@ func (e Endowment) Richest() (Material, float64) {
 	}
 	return best, most
 }
+
+// Complement draws an asteroid field's or ice cavern's crust from the
+// INVERSE of its planet's barren mask.
+//
+// This is the one rule that makes a three-body system worth having. The
+// endowment is deliberately pocked with holes — a third of the time a world
+// simply has none of a material — and those holes are what force trade. But
+// on a map with one world per system they also make most systems unable to
+// complete a single chain: an electronics world with no cuprite of its own
+// cannot get copper, because copper is a neighbourhood good and it has no
+// neighbourhood. Chips were made at 7% of demand and the shipyards that eat
+// them pressed nothing at all.
+//
+// So the rock next door has what the planet lacks. Not everything it lacks —
+// a system that is self-sufficient never sends a ship anywhere, which is the
+// opposite failure — but enough that the LOCAL chain can close and the long
+// hauls are for finished goods rather than for ore that should have been one
+// shuttle hop away.
+func Complement(seed int64, field, planet, pop int, mineRate float64) Endowment {
+	host := Endow(seed, planet, pop, mineRate)
+	var e Endowment
+	e.Rad = Dose(seed, field, 0) // a field has nobody on it; it may be hot
+	popM := math.Max(float64(pop), 1) / 1e6
+
+	for _, m := range Crusts() {
+		if m == Spodumene {
+			if e.Rad > 0 {
+				u := math.Max(unit(seed, field, m, 2), 1e-6)
+				heavy := math.Min(math.Pow(u, -1/tailPower), 40)
+				e.Reserve.Add(m, math.Round(baseReserve*math.Sqrt(popM)*heavy*spodumeneScale*e.Rad))
+			}
+			continue
+		}
+		// How badly the planet wants this: 1 where it has none, falling to
+		// 0 where it is already rich. fieldFloor keeps a trickle of
+		// everything so a field is a plausible rock rather than a vending
+		// machine for exactly one material.
+		want := fieldFloor
+		if host.Reserve[m] <= 0 {
+			want = 1
+		} else if host.Reserve[m] < baseReserve {
+			want = 1 - host.Reserve[m]/baseReserve
+			if want < fieldFloor {
+				want = fieldFloor
+			}
+		}
+		u := math.Max(unit(seed, field, m, 4), 1e-6)
+		heavy := math.Min(math.Pow(u, -1/tailPower), 12)
+		tons := baseReserve * math.Sqrt(popM) * heavy * want * fieldRichness
+		if tons < 1 {
+			continue
+		}
+		e.Reserve.Add(m, math.Round(tons))
+	}
+	// A field has no city and therefore no centuries of surface stock: what
+	// is there is in the ground, which is why it takes a harvester or an
+	// automated pit to get any of it out.
+	return e
+}
+
+const (
+	// fieldFloor is the share of a normal draw a field carries even of a
+	// material its planet already has plenty of.
+	fieldFloor = 0.12
+	// fieldRichness scales the whole field against a populated world's
+	// seams. Above 1 because a field is all crust and no city.
+	fieldRichness = 1.35
+)

@@ -139,13 +139,35 @@ func (u *Universe) route(c govt.Color, src, dst *World, m econ.Material) (Route,
 	if spare < minLoad || need < minLoad {
 		return Route{}, false
 	}
-	lane := u.Fleet.Lane(src.Stellar, dst.Stellar)
-	return Route{
+	r := Route{
 		Mat: m, From: src.Stellar, To: dst.Stellar,
 		Buy: buy, Sell: sell, Margin: sell - buy,
 		Tons:   math.Min(spare, need),
-		Length: lane.Length,
-	}, true
+		Length: u.lane(src, dst),
+	}
+	r.rank = u.rankOf(c, r, src, dst)
+	return r, true
+}
+
+// rankOf scores one run. It is called where the two worlds are already
+// pointers in hand, because looking them back up by ID afterwards cost two
+// map probes per route per day — a seventh of the whole tick once the map
+// carried twenty thousand routes a colour.
+//
+// Margin per megametre: a fat spread across the galaxy is worth less than a
+// decent one next door, because the hull could have run the short one three
+// times. Then OpenFront's two biases: twice the weight for a port in the
+// same system, twice for an ally — a near ally is four times as likely to
+// get the parcel as a distant stranger.
+func (u *Universe) rankOf(c govt.Color, r Route, src, dst *World) float64 {
+	v := r.Value() / math.Max(r.Length, 1)
+	if src.System == dst.System {
+		v *= nearBias
+	}
+	if dst.Govt != c && u.Relation(c, dst.Govt) == Ally {
+		v *= allyBias
+	}
+	return v
 }
 
 // RoutesFrom is everything worth lifting out of ONE port today, ranked.
@@ -207,13 +229,14 @@ func (u *Universe) routesFrom(c govt.Color, src *World, out []Route) []Route {
 			if need < minLoad {
 				continue
 			}
-			lane := u.Fleet.Lane(src.Stellar, toID)
-			out = append(out, Route{
+			r := Route{
 				Mat: m, From: src.Stellar, To: toID,
 				Buy: buy, Sell: sell, Margin: sell - buy,
 				Tons:   math.Min(spare, need),
-				Length: lane.Length,
-			})
+				Length: u.lane(src, dst),
+			}
+			r.rank = u.rankOf(c, r, src, dst)
+			out = append(out, r)
 		}
 	}
 	return out
@@ -233,42 +256,41 @@ func (u *Universe) routesFrom(c govt.Color, src *World, out []Route) []Route {
 // it: the reflective version swaps elements through reflectlite.Swapper and
 // typedmemmove, which was another fifth of the time on its own. Both are
 // stable, so ties keep insertion order and the result is unchanged.
+// rankRoutes sorts a route list best-first, in place. The rank itself was
+// computed when each route was built; this is only the ordering.
 func (u *Universe) rankRoutes(c govt.Color, out []Route) {
-	for i := range out {
-		r := &out[i]
-		// Margin per megametre: a fat spread across the galaxy is worth less
-		// than a decent one next door, because the hull could have run the
-		// short one three times. Then OpenFront's two biases: twice the
-		// weight for a port next door, twice for an ally — a near ally is
-		// four times as likely to get the parcel as a distant stranger.
-		v := r.Value() / math.Max(r.Length, 1)
-		src, dst := u.Worlds[r.From], u.Worlds[r.To]
-		if src.System == dst.System {
-			v *= nearBias
-		}
-		if dst.Govt != c && u.Relation(c, dst.Govt) == Ally {
-			v *= allyBias
-		}
-		r.rank = v
-	}
-	// Sort a 16-byte key, not the 72-byte Route. A stable merge sort moves
-	// its elements a great deal, and moving nine words where two would do
-	// was a sixth of the whole tick.
+	// Sort a 16-byte key, not the 72-byte Route, and sort it under a TOTAL
+	// ORDER — rank, then material, then both endpoints. Two routes can only
+	// compare equal now if they are the same route, so the result does not
+	// depend on the order the scan happened to produce them in and a stable
+	// sort is no longer needed to keep it deterministic.
+	//
+	// That matters because stability is expensive: a stable merge sort moves
+	// its elements a great deal, and with three hundred and twenty-seven
+	// bodies the board carries twenty thousand routes a colour. Dropping to
+	// an unstable pdqsort over a total order is the same answer, cheaper.
 	if cap(u.sortKeys) < len(out) {
 		u.sortKeys = make([]routeKey, len(out))
 	}
 	keys := u.sortKeys[:len(out)]
 	for i := range out {
-		keys[i] = routeKey{rank: out[i].rank, mat: out[i].Mat, idx: int32(i)}
+		keys[i] = routeKey{rank: out[i].rank, mat: out[i].Mat,
+			from: int32(out[i].From), to: int32(out[i].To), idx: int32(i)}
 	}
-	slices.SortStableFunc(keys, func(a, b routeKey) int {
-		if a.rank != b.rank {
+	slices.SortFunc(keys, func(a, b routeKey) int {
+		switch {
+		case a.rank != b.rank:
 			if a.rank > b.rank {
 				return -1
 			}
 			return 1
+		case a.mat != b.mat:
+			return int(a.mat) - int(b.mat)
+		case a.from != b.from:
+			return int(a.from - b.from)
+		default:
+			return int(a.to - b.to)
 		}
-		return int(a.mat) - int(b.mat)
 	})
 	if cap(u.sortScratch) < len(out) {
 		u.sortScratch = make([]Route, len(out))
@@ -283,9 +305,10 @@ func (u *Universe) rankRoutes(c govt.Color, out []Route) {
 // routeKey is the sort payload: everything the comparator reads, and the
 // index of the route it came from.
 type routeKey struct {
-	rank float64
-	idx  int32
-	mat  econ.Material
+	rank     float64
+	idx      int32
+	from, to int32
+	mat      econ.Material
 }
 
 // canTrade reports whether a hull of colour c will dock at a port held by
@@ -489,14 +512,20 @@ const berthScan = 8
 // no route. It is supplied by whoever owns the star map, because this
 // package deliberately does not.
 func (u *Universe) ChartLanes(hops func(from, to int) int) {
+	n := len(u.order)
+	u.laneLen = make([]float64, n*n)
 	for i, from := range u.order {
-		for _, to := range u.order[i+1:] {
-			n := hops(from, to)
-			if n < 0 {
-				n = unreachableHops // there and back the long way round
+		for j := i + 1; j < n; j++ {
+			to := u.order[j]
+			h := hops(from, to)
+			if h < 0 {
+				h = unreachableHops // there and back the long way round
 			}
-			u.Fleet.SetLane(from, to, inSystemMm+jumpMm*float64(n))
+			l := inSystemMm + jumpMm*float64(h)
+			u.Fleet.SetLane(from, to, l)
+			u.laneLen[i*n+j], u.laneLen[j*n+i] = l, l
 		}
+		u.laneLen[i*n+i] = inSystemMm
 	}
 }
 

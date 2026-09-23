@@ -327,7 +327,7 @@ func TestLadderIsSharedAndSeatFollowsCharter(t *testing.T) {
 
 // Growth is made of rations: fed grows, unfed shrinks.
 func TestGrowthIsMadeOfRations(t *testing.T) {
-	fed := New(77, []Port{{500, "Fed", 500, 1_000_000, govt.Green}}, 0)
+	fed := New(77, []Port{{Stellar: 500, Name: "Fed", System: 500, Pop: 1_000_000, Govt: govt.Green}}, 0)
 	w := fed.Worlds[500]
 	for _, m := range []econ.Material{econ.Rations, econ.Medicine, econ.FuelCells, econ.Lumber} {
 		w.Warehouse.Add(m, 5e6)
@@ -340,7 +340,7 @@ func TestGrowthIsMadeOfRations(t *testing.T) {
 	if w.Pop <= start {
 		t.Errorf("a fed world did not grow: %d → %d", start, w.Pop)
 	}
-	hungry := New(77, []Port{{500, "Hungry", 500, 1_000_000, govt.Green}}, 0)
+	hungry := New(77, []Port{{Stellar: 500, Name: "Hungry", System: 500, Pop: 1_000_000, Govt: govt.Green}}, 0)
 	h := hungry.Worlds[500]
 	h.Warehouse = econ.Stock{}
 	h.Reserve = econ.Stock{}
@@ -357,7 +357,7 @@ func TestGrowthIsMadeOfRations(t *testing.T) {
 // Eating leaves compost, and the composter turns it back into biomass on
 // the surface — never into the reserve.
 func TestTheOrganicLoopCloses(t *testing.T) {
-	u := New(9, []Port{{500, "Farm", 500, 2_000_000, govt.Green}}, 0)
+	u := New(9, []Port{{Stellar: 500, Name: "Farm", System: 500, Pop: 2_000_000, Govt: govt.Green}}, 0)
 	w := u.Worlds[500]
 	w.Warehouse.Add(econ.Rations, 1e5)
 	u.ReopenBooks()

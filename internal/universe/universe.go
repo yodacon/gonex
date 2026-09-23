@@ -67,6 +67,20 @@ type Universe struct {
 	// worth of garbage every simulated day.
 	sortKeys    []routeKey
 	sortScratch []Route
+
+	// laneLen is every lane length, flat, indexed by the two worlds' ord.
+	// Rebuilt by ChartLanes; nil until then, in which case the registry's
+	// map is asked as before.
+	laneLen []float64
+}
+
+// lane is the length between two worlds we already hold pointers to. It is
+// the hot path of the route scan and it must not touch a map.
+func (u *Universe) lane(a, b *World) float64 {
+	if u.laneLen != nil {
+		return u.laneLen[a.ord*len(u.order)+b.ord]
+	}
+	return u.Fleet.Lane(a.Stellar, b.Stellar).Length
 }
 
 // New seeds a universe from a list of ports.
@@ -76,6 +90,12 @@ type Port struct {
 	System  int
 	Pop     int
 	Govt    govt.Color
+
+	// Kind is planet, station or field; see triad.go. The zero value is a
+	// planet, so a caller that knows nothing about the triad keeps working.
+	Kind BodyKind
+	// Host is the planet a minted body belongs to, 0 for a planet itself.
+	Host int
 }
 
 // New builds and seeds the universe, opens its books, and enrols its fleet.
@@ -104,12 +124,15 @@ func New(seed int64, ports []Port, hullsPer int) *Universe {
 
 	var genesis econ.Stock
 	for _, p := range ports {
-		w := Seed(seed, p.Stellar, p.Name, p.System, p.Pop, p.Govt)
+		w := Seed(seed, p)
 		u.Worlds[p.Stellar] = w
 		u.order = append(u.order, p.Stellar)
 		genesis = genesis.Plus(w.Genesis())
 	}
 	sort.Ints(u.order)
+	for i, id := range u.order {
+		u.Worlds[id].ord = i
+	}
 
 	// Minimal infrastructure, the capital's share: a Works, a Bastion and a
 	// Habitat at each colour's most populous world. Built, not bought — the
@@ -306,7 +329,7 @@ func (u *Universe) mine(w *World) {
 	// site with machines on it, and the machines run for whoever is paying.
 	// That is what makes the hot worlds the free ports of this economy:
 	// nobody holds them, everybody buys from them.
-	if w.Govt == govt.None && !w.Hostile() {
+	if !w.Worked() {
 		return
 	}
 	popM := float64(w.Pop)/1e6 + w.autoCrew()
@@ -367,7 +390,22 @@ func (u *Universe) mine(w *World) {
 		}
 		need := w.MineNeed(m, w.Wants(m))
 		if w.Wants(m) <= 0 {
-			need = 0.15 * budget / 5 // a trickle for trade, even unwanted
+			// Nothing here eats this. A populated world still lifts a
+			// trickle for trade; a FIELD, which has no industry at all and
+			// would otherwise dig every material forever, digs against a
+			// stockpile instead — enough on the pad for the hull that comes
+			// for it, and no more.
+			//
+			// Without the cap the fields buried 2.8 MEGATONNES of finite
+			// reserve in heaps nobody had asked for inside one simulated
+			// year. The reserve is the only finite thing in this economy
+			// and digging it into a pile is the one irreversible mistake a
+			// world can make.
+			if w.Kind == BodyField {
+				need = math.Max(fieldStockpile-w.Warehouse[m], 0)
+			} else {
+				need = 0.15 * budget / 5
+			}
 		}
 		if need <= 0 {
 			continue
@@ -559,7 +597,10 @@ func (u *Universe) eat(w *World, m econ.Material, tons float64) float64 {
 // the food the lanes can deliver, then the housing (see Housing). Unaligned
 // worlds neither grow nor starve: Konquest's neutrals do not produce.
 func (u *Universe) grow(w *World) {
-	if w.Govt == govt.None || w.Pop <= 0 {
+	// A field has no population to grow and must never be given one: minPop
+	// would otherwise conjure a thousand people onto an airless rock and
+	// then feed them.
+	if w.Govt == govt.None || w.Pop <= 0 || w.Kind == BodyField {
 		return
 	}
 	// Dose is a straight tax on growth, and at the breeder threshold it is
@@ -595,4 +636,10 @@ const (
 	// scale. Not 1.0: a camp at the worst address in the universe still
 	// creeps upward when it is fed, because somebody keeps signing on.
 	radGrowthBite = 0.94
+
+	// fieldStockpile is how many tons of a material a field keeps on the pad
+	// against a buyer turning up. A few hull-loads: enough that a courier
+	// which diverts for it is not disappointed, little enough that the seam
+	// is still in the ground when somebody actually wants it.
+	fieldStockpile = 1500.0
 )

@@ -26,4 +26,4 @@ func BenchmarkTick11Worlds(b *testing.B) { benchTick(b, testPorts()) }
 // The map the game actually seeds. FindRoutes is O(worlds^2 x materials)
 // per colour per day, so this is the number that decides whether passing a
 // season is instant or a visible freeze.
-func BenchmarkTickGazetteer(b *testing.B) { benchTick(b, gazetteerPorts(b)) }
+func BenchmarkTickGazetteer(b *testing.B) { benchTick(b, Triad(gazetteerPorts(b))) }

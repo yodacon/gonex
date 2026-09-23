@@ -63,10 +63,16 @@ func TestGazetteer(t *testing.T) {
 	fmt.Sscanf(os.Getenv("GAZSEED"), "%d", &seed)
 
 	ports := gazetteerPorts(t)
+	if os.Getenv("FLAT") == "" {
+		ports = Triad(ports) // three bodies per system; FLAT=1 for the old map
+	}
 	u := New(seed, ports, 16)
 	g, _ := galaxy.Load()
 	u.ChartLanes(func(from, to int) int {
-		a, b := g.Stellars[from], g.Stellars[to]
+		// Minted bodies are not in the gazetteer: chart them from the
+		// planet they belong to, or they read as unreachable from their
+		// own orbit.
+		a, b := g.Stellars[HostOf(from)], g.Stellars[HostOf(to)]
 		if a == nil || b == nil {
 			return -1
 		}
@@ -106,8 +112,17 @@ func TestGazetteer(t *testing.T) {
 		}
 	}
 	t.Logf("=== THE MAP AS FOUNDED (seed %d) ===", seed)
-	t.Logf("  %d ports — Red %d · Green %d · Blue %d · neutral %d",
-		len(ports), byColour[govt.Red], byColour[govt.Green], byColour[govt.Blue], byColour[govt.None])
+	pl, st, fl := u.TriadReport()
+	t.Logf("  %d ports — %d planets · %d stations · %d fields",
+		len(ports), pl, st, fl)
+	t.Logf("  Red %d · Green %d · Blue %d · neutral %d",
+		byColour[govt.Red], byColour[govt.Green], byColour[govt.Blue], byColour[govt.None])
+	var reach int
+	for _, id := range u.Order() {
+		reach += u.LocalReach(u.Worlds[id])
+	}
+	t.Logf("  in-system neighbours per body: %.2f (the same-type rule needs > 0)",
+		float64(reach)/float64(len(u.Order())))
 	t.Logf("  %d hostile (%.0f%%) — %d breeder-class, %d smelter-class, %d mill-class",
 		hot, 100*float64(hot)/float64(len(ports)), breeders, smelters, mills)
 	t.Logf("  refineries standing: %d pellet lines, %d melt lines", pellet, melt)

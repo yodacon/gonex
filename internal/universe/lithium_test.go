@@ -18,7 +18,7 @@ import (
 // hotWorld builds a one-world universe forced hot, for the siting rules.
 func hotWorld(t *testing.T, rad float64, stellar int) (*Universe, *World) {
 	t.Helper()
-	u := New(4242, []Port{{stellar, "Hot", stellar, 400_000, govt.None}}, 0)
+	u := New(4242, []Port{{Stellar: stellar, Name: "Hot", System: stellar, Pop: 400_000, Govt: govt.None}}, 0)
 	w := u.Worlds[stellar]
 	// Rad is set after Seed has run, so re-apply the two things Seed
 	// derives from it: the population ceiling and the mandate.
@@ -232,7 +232,7 @@ func TestAMandatedLineIsDugForFirst(t *testing.T) {
 // galaxy made 2,204 t of ore a day against 35 t of steel — with an appetite
 // for steel of nine hundred.
 func TestContestedInputsAreRationed(t *testing.T) {
-	u := New(77, []Port{{500, "Ferrite", 500, 2_000_000, govt.Green}}, 0)
+	u := New(77, []Port{{Stellar: 500, Name: "Ferrite", System: 500, Pop: 2_000_000, Govt: govt.Green}}, 0)
 	w := u.Worlds[500]
 	w.Reserve = econ.Stock{}
 	w.Reserve.Add(econ.Ferrite, 400_000)

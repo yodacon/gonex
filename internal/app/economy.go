@@ -86,6 +86,13 @@ func (a *App) seedUniverse() {
 			Pop: city.PopulationOf(id), Govt: govt.FromGazetteer(st.Govt),
 		})
 	}
+	// Three bodies per system: the planet the gazetteer recorded, an orbital
+	// that imports everything it processes, and a field or nebula that holds
+	// what its planet does not. Before this the recovered map had one
+	// stellar in each of its systems, so the same-type rule — intermediates
+	// move within a system, and only cross a jump on a chartered lane —
+	// described a neighbourhood no world in the game actually had.
+	ports = universe.Triad(ports)
 	a.uni = universe.New(a.voy.Seed, ports, hullsPerColour)
 	// Charter the lanes from the real jump map. Until this call every lane
 	// in the economy was the registry's default length, which meant the
@@ -95,7 +102,9 @@ func (a *App) seedUniverse() {
 	// tells the economy which worlds are NEIGHBOURS, and therefore where an
 	// intermediate like copper is allowed to move at all.
 	a.uni.ChartLanes(func(from, to int) int {
-		af, at := a.gal.Stellars[from], a.gal.Stellars[to]
+		// A station and a field are minted, not recovered, so they are not
+		// in the gazetteer. Chart them from the planet they orbit.
+		af, at := a.gal.Stellars[universe.HostOf(from)], a.gal.Stellars[universe.HostOf(to)]
 		if af == nil || at == nil {
 			return -1
 		}
