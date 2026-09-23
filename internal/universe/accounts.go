@@ -116,6 +116,9 @@ func (u *Universe) govern() {
 		}
 		// 3b. The focus's investments that are not buildings.
 		u.invest(c)
+		// 3b-ii. The core world revive plan: the capital retools against
+		// whatever the galaxy could not draw this month. See bottleneck.go.
+		u.revive(c)
 		// 3c. Restock: a capital going dry gets a rounds convoy from any
 		// held world that has them. Konquest's planet with a zero kill
 		// percentage is the one thing no government should let happen to

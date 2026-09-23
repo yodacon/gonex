@@ -578,7 +578,16 @@ func (u *Universe) arrive(h *traffic.Hull) {
 		// The port buys what its treasury can pay for. The rest stays
 		// aboard; a broke world is a real event and the hold says so.
 		if price > 0 {
-			tons = math.Min(tons, float64((dst.Credits-paid)/price))
+			// A port buys what its treasury can pay for, and the part it
+			// cannot is the NoMoney evidence — the difference between a
+			// galaxy short of a material and a galaxy that cannot afford
+			// the material it already has.
+			afford := math.Min(tons, float64((dst.Credits-paid)/price))
+			u.strain.Offered.Add(m, tons)
+			if afford < tons {
+				u.strain.Refused.Add(m, tons-afford)
+			}
+			tons = afford
 		}
 		if tons <= 0 {
 			continue

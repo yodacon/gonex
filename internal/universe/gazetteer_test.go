@@ -170,6 +170,25 @@ func TestGazetteer(t *testing.T) {
 		reserve = reserve.Plus(u.Worlds[id].Reserve)
 		warehouse = warehouse.Plus(u.Worlds[id].Warehouse)
 	}
+	t.Logf("=== WHAT THE ECONOMY COULD NOT DO ===")
+	t.Logf("  the last %d days, ranked by the intake the shortage blocked", strainWindow)
+	for i, b := range u.Bottlenecks() {
+		if i >= 10 {
+			break
+		}
+		t.Logf("  %s", b.Describe())
+	}
+	t.Logf("=== WHAT THE CAPITALS DID ABOUT IT ===")
+	for _, c := range govt.Colors() {
+		if cap := u.Capital(c); cap != nil {
+			t.Logf("  %-5s %-20s mandates %v (%d revived)", c, cap.Name, cap.Mandate, cap.revived)
+		}
+	}
+
+	for _, c := range []Cause{NoPlant, NoFeed, NoMoney, NoLane} {
+		t.Logf("  revive plan answered %-22s %4d times", c.String()+":", u.Revivals[c])
+	}
+
 	t.Logf("=== THE BOOKS ===")
 	t.Logf("  genesis %.0f kt · crust %.0f kt · warehouse %.0f kt · afloat %.0f t · sink %.0f kt",
 		u.Books.Genesis.Total()/1000, reserve.Total()/1000, warehouse.Total()/1000,

@@ -130,6 +130,11 @@ type World struct {
 	// ore is not sited, it is merely hopeful.
 	mandated int
 
+	// revived is how many of this world's mandates were added by the core
+	// world revive plan rather than founded with it. See bottleneck.go: the
+	// founding mandates are never retired, the revived ones rotate.
+	revived int
+
 	// shortfall counts consecutive days the world could not feed itself,
 	// and fed is yesterday's ration: what the population ate against what
 	// it wanted. Growth is made of the second; see grow().

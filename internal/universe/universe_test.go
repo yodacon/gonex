@@ -87,19 +87,42 @@ func TestDestroyingALadenHullConservesItsCargo(t *testing.T) {
 	}
 }
 
-// The census is fixed for the life of the universe: hulls are never spawned
-// to fill a scene, and a destroyed one is still counted forever.
-func TestTheShipCensusIsFixed(t *testing.T) {
+// The census only ever grows, and only against plate.
+//
+// This test used to assert the census was FIXED, and it passed for the life
+// of the project — not because hulls are never added, but because no yard
+// anywhere had ever pressed a ton of hull plate, so commission() could never
+// reach its last line. The core world revive plan made the eleven-world rig
+// solvent enough to press some, a hull was commissioned, and the assertion
+// failed on a day the economy had finally started working.
+//
+// So the invariant is restated as the one merchantfleet.go actually holds:
+// hulls are never spawned to fill a scene, a destroyed one is counted
+// forever, and the census grows only to the cap and only when a yard had the
+// tonnage on the shelf to grow it.
+func TestTheShipCensusOnlyGrowsAgainstPlate(t *testing.T) {
 	u := newTestUniverse(11)
 	want := len(u.Fleet.Hulls)
 	if want == 0 {
 		t.Fatal("no hulls were raised")
 	}
+	var cap int
+	for _, c := range govt.Colors() {
+		cap += u.FleetCap(c)
+	}
 	for d := 0; d < 200; d++ {
 		u.Tick()
-		if got := len(u.Fleet.Hulls); got != want {
-			t.Fatalf("day %d: census is %d, was %d", u.Day, got, want)
+		got := len(u.Fleet.Hulls)
+		if got < want {
+			t.Fatalf("day %d: census SHRANK to %d from %d — a hull left the books", u.Day, got, want)
 		}
+		if got > cap {
+			t.Fatalf("day %d: census is %d, past the %d-hull cap", u.Day, got, cap)
+		}
+		if got > want && u.Journal.Made[econ.Hull] <= 0 {
+			t.Fatalf("day %d: census grew to %d with no plate ever pressed", u.Day, got)
+		}
+		want = got
 	}
 	c := u.Fleet.Census()
 	var total int

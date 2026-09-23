@@ -218,6 +218,32 @@ var recipes = [KindCount]recipe{
 	Breaker:   {in: []Port{{econ.Scrap, 1}}, out: []Port{{econ.Steel, 0.75}}},
 }
 
+// Makes reports whether a primitive yields this material. It exists for the
+// bottleneck detector, which has to answer "who could make me some of this"
+// for by-products as well as for a chain's headline Good — acid, fluid and
+// polymer all come out of one column and only acid is named.
+func Makes(k Kind, m econ.Material) bool {
+	if k < 0 || k >= KindCount {
+		return false
+	}
+	for _, p := range recipes[k].out {
+		if p.Mat == m && p.Tons > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// Inputs is a primitive's intake at unit rate. Like Makes, it exists so the
+// bottleneck detector can walk a chain backwards and ask what the stage that
+// is standing idle is actually waiting for.
+func Inputs(k Kind) []Port {
+	if k < 0 || k >= KindCount {
+		return nil
+	}
+	return append([]Port(nil), recipes[k].in...)
+}
+
 // Build makes one primitive at the given daily throughput, with the owning
 // government's industrial yield applied. A Blue works keeps more of what it
 // puts in than a Red one; the difference falls out as slag, so the balance

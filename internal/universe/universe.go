@@ -47,6 +47,17 @@ type Universe struct {
 	// end of it.
 	OnConquer func(*World)
 
+	// Revivals counts what the core world revive plan actually did, by the
+	// cause it was answering. It is a diagnostic, not state the simulation
+	// reads: a plan that fires a thousand times and changes nothing is the
+	// failure mode worth being able to see.
+	Revivals [5]int
+
+	// Strain is the last complete window of what the economy tried to do and
+	// could not, and strain the one still filling. See bottleneck.go.
+	Strain Strain
+	strain Strain
+
 	// Sink is where consumed and wasted mass goes. It is a pool like any
 	// other and it is handed to the auditor like any other, which is the
 	// whole trick: "used up" is a place, not a disappearance.
@@ -290,6 +301,7 @@ func (u *Universe) Audit() []econ.Discrepancy { return u.Books.Audit(u.Pools()..
 // commission replacements for what was lost, then the governments spend.
 func (u *Universe) Tick() {
 	u.Day++
+	u.rollStrain()
 	for _, id := range u.order {
 		w := u.Worlds[id]
 		u.mine(w)
@@ -437,6 +449,7 @@ func (u *Universe) mine(w *World) {
 		asked += x.tons
 	}
 	var served econ.Stock
+	budgetAtStart := budget
 	if asked > budget {
 		share := budget / asked
 		for _, x := range wants {
@@ -468,6 +481,16 @@ func (u *Universe) mine(w *World) {
 		}
 		if w.Reserve[x.m] <= 0 {
 			u.Journal.Logf(u.Day, -1, "%s: the %s is worked out", w.Name, x.m)
+		}
+	}
+
+	// What the pit was asked for and had no budget to lift. This is the
+	// NoTurn evidence: a seam in the ground, a plant waiting on it, and a
+	// dig budget that went to the world's other chain.
+	if asked > budgetAtStart {
+		short := (asked - budgetAtStart) / asked
+		for _, x := range wants {
+			u.strain.Undug.Add(x.m, x.tons*short)
 		}
 	}
 }
@@ -556,6 +579,17 @@ func (u *Universe) runPlant(w *World, plant *industry.Module, rate float64) {
 		}
 		if r := w.Warehouse[m] / demand[m]; r < rate {
 			rate = r
+		}
+	}
+	// Whatever the stage wanted and could not draw is the evidence the
+	// bottleneck detector runs on. Recording it here rather than inferring
+	// it later is what makes a shortage attributable: this is the exact
+	// tonnage of work the galaxy tried to do and could not.
+	if rate < 1 {
+		for m := econ.Material(0); m < econ.Count; m++ {
+			if demand[m] > 0 {
+				u.strain.Unmet.Add(m, demand[m]*(1-rate))
+			}
 		}
 	}
 	if rate <= 1e-9 {
