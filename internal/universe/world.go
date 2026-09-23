@@ -916,16 +916,34 @@ func (w *World) appetite(m econ.Material) float64 {
 var baseValue = [econ.Count]float64{
 	econ.Lumber: 140, econ.Ore: 220, econ.Rations: 90,
 	econ.Medicine: 480, econ.Chips: 640, econ.FuelCells: 300,
-	econ.Pellets: 860, econ.Melt: 1020,
+	econ.Pellets: 1900, econ.Melt: 1400,
 
 	econ.Steel: 210, econ.Copper: 340, econ.Silicon: 380,
 	econ.Polymer: 190, econ.Grain: 70,
 
-	// The lithium line, priced by how much rock and how much shielding each
-	// ton cost to get. Heavylith is the most valuable ton in the game and
-	// the one nobody can carry far: the two facts together are what pin the
+	// The lithium line, priced so that EVERY STAGE ADDS VALUE. It did not
+	// before: at 185 a mill turned 136 cr of spodumene and acid into 83 cr
+	// of concentrate, and a radiant smelter lost a further 2 cr a ton, so
+	// the two shallowest fuel chains in the catalogue destroyed value at
+	// base prices and the worlds licensed to run only those ran at 6% and
+	// 19% of nameplate.
+	//
+	// Measured across ten seeds, correcting the two intermediates changed
+	// NOTHING — not one metric on one seed. Lithex and lithium are never
+	// traded: one is a hot cell's own feedstock and the other rides in a
+	// shielded cask that no ordinary courier will take, so their board
+	// prices price a transaction that does not happen. The numbers are
+	// right now rather than useful, and they are kept right because the
+	// moment an intermediate becomes haulable they stop being inert.
+	//
+	// The FINISHED fuels are a different matter, and there the arithmetic
+	// was worse and did bite: a press turned 1,333 cr of clad heavylith
+	// and steel into 740 cr of pellets. Pricing the two board fuels above
+	// their own feedstock raised fuel output on eight seeds in ten.
+	// Heavylith is still the most valuable ton in the game and the one
+	// nobody can carry far: the two facts together are what pin the
 	// finishing plants to the hostile worlds.
-	econ.Lithex: 185, econ.Lithium: 540, econ.Heavylith: 1650,
+	econ.Lithex: 370, econ.Lithium: 820, econ.Heavylith: 1650,
 	econ.Acid: 160, econ.Fluid: 235,
 
 	// The yard tier is priced by what went into it. Scrap is worth what a

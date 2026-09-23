@@ -151,7 +151,21 @@ var recipes = [KindCount]recipe{
 	Mill:      {in: []Port{{econ.Biomass, 1}}, out: []Port{{econ.Lumber, 0.85}}},
 	Cannery:   {in: []Port{{econ.Grain, 1}}, out: []Port{{econ.Rations, 0.90}}},
 	Pharma:    {in: []Port{{econ.Grain, 0.6}, {econ.Polymer, 0.4}}, out: []Port{{econ.Medicine, 0.55}}},
-	Fab:       {in: []Port{{econ.Silicon, 0.5}, {econ.Copper, 0.5}}, out: []Port{{econ.Chips, 0.45}}},
+	// The fabricator's silicon port is 0.40 and not 0.50, and the number is
+	// the FURNACE's yield rather than a guess. A furnace turns a ton of
+	// silicate into 0.40 t of silicon — near the stoichiometric ceiling for
+	// reducing silica, which is 46.7% — so a fab that asked for 0.50
+	// silicon per 0.50 copper could never be fed by the furnace standing in
+	// front of it. Compose() throttled the whole fab stage to 0.40/0.50 to
+	// make the books work, and every electronics chain in the galaxy ran
+	// its fabricator at 72-96% of nameplate for ever, the spread being the
+	// owning government's yield. That was not a shortage of anything. It
+	// was two rows of this table that did not agree.
+	//
+	// Matching them costs nothing and is also the truer picture: a chip is
+	// mostly package and interconnect, so a fabricator eats more copper by
+	// mass than silicon. Crust per ton of chips falls from 5.09 t to 4.53.
+	Fab:       {in: []Port{{econ.Silicon, 0.4}, {econ.Copper, 0.5}}, out: []Port{{econ.Chips, 0.45}}},
 	CellPlant: {in: []Port{{econ.Polymer, 0.6}, {econ.Copper, 0.4}}, out: []Port{{econ.FuelCells, 0.65}}},
 	Crusher:   {in: []Port{{econ.Ferrite, 1}}, out: []Port{{econ.Ore, 0.92}}},
 
