@@ -180,7 +180,16 @@ func (u *Universe) bestWorksSite(worlds []*World) *World {
 // besiege, it takes what is soft and moves on. Capture more worlds, produce
 // more, capture more.
 func (u *Universe) expand(c govt.Color) {
-	if u.Day%u.Tune.ExpandEvery != 0 {
+	// A stretched government looks for its next conquest less often. The
+	// clock, not a cap: see Overhead.
+	every := u.Tune.ExpandEvery
+	if o := u.Overhead(c); o > 0 {
+		every = int(float64(every) / o)
+	}
+	if every < 1 {
+		every = 1
+	}
+	if u.Day%every != 0 {
 		return
 	}
 	cap := u.Capital(c)

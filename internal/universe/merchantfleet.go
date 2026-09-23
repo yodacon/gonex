@@ -79,7 +79,9 @@ const (
 
 // FleetCap is the most hulls this colour may have afloat at once.
 func (u *Universe) FleetCap(c govt.Color) int {
-	n := len(u.worldsOf(c)) * u.Tune.FleetCap
+	// Sublinear past the span of control: a stretched government cannot
+	// crew, berth or victual eight hulls a world. See Overhead.
+	n := int(float64(len(u.worldsOf(c))*u.Tune.FleetCap) * u.Overhead(c))
 	if n < minCensus {
 		n = minCensus
 	}

@@ -342,8 +342,72 @@ func (u *Universe) Garrison(w *World) []*traffic.Hull {
 	return out
 }
 
-// Capital is a colour's principal world: the most populous one it holds.
+// Capital is a colour's seat, and it is a FOUNDING FACT.
+//
+// It used to be "the most populous world this colour holds", recomputed on
+// every call, and that was wrong in a way that only showed once the war
+// worked. Population moves. Over two simulated years every colour's capital
+// drifted to a different world — Blue's went from Sirius Station to Ursa
+// Minor Beta — while the things that make a capital a capital stayed put: the
+// founding Works, the Bastion, the Habitat, and above all the Munitions and
+// Shipyard mandates. So the arsenal was at one world, the government at
+// another, and the rally point called hulls home to a world with no magazine
+// to arm them from.
+//
+// A seat is therefore elected once, at genesis, by population — and then
+// held. It moves exactly once more: if it is taken, see succeed().
 func (u *Universe) Capital(c govt.Color) *World {
+	if c < 0 || int(c) >= len(u.capital) {
+		return nil
+	}
+	w := u.Worlds[u.capital[c]]
+	if w == nil || w.Govt != c {
+		return nil
+	}
+	return w
+}
+
+// foundCapitals elects each colour's seat at genesis, by population. This is
+// the ONLY place a capital is chosen on size; everywhere after, it is
+// inherited.
+func (u *Universe) foundCapitals() {
+	for i := range u.capital {
+		u.capital[i] = -1
+	}
+	for _, c := range govt.Colors() {
+		var best *World
+		for _, id := range u.order {
+			w := u.Worlds[id]
+			if w.Govt != c {
+				continue
+			}
+			if best == nil || w.Pop > best.Pop {
+				best = w
+			}
+		}
+		if best != nil {
+			u.capital[c] = best.Stellar
+		}
+	}
+}
+
+// succeed moves a colour's seat after its capital has fallen, and takes the
+// government's business with it.
+//
+// A seat is a founding fact, but a founding fact about a world somebody else
+// now owns is a government in exile with no arsenal, no yard and nowhere to
+// rally. So the successor is the most populous world still held — the same
+// rule that founded the first one — and it INHERITS the founding mandates,
+// because a capital without an arsenal is the zero-kill-percentage planet
+// Konquest says no government should ever have.
+func (u *Universe) succeed(c govt.Color) {
+	if c == govt.None || c < 0 || int(c) >= len(u.capital) {
+		return
+	}
+	old := u.Worlds[u.capital[c]]
+	if old != nil && old.Govt == c {
+		return // still held; nothing to do
+	}
 	var best *World
 	for _, id := range u.order {
 		w := u.Worlds[id]
@@ -354,8 +418,40 @@ func (u *Universe) Capital(c govt.Color) *World {
 			best = w
 		}
 	}
-	return best
+	if best == nil {
+		u.capital[c] = -1
+		u.Journal.Logf(u.Day, -1, "%s holds no world: the government is gone", c)
+		return
+	}
+	u.capital[c] = best.Stellar
+	// The arsenal and the yard follow the seat. Endowed buildings do not —
+	// a Bastion is masonry and stays where it was built — but a mandate is
+	// an instruction, and an instruction belongs to whoever is giving it.
+	var moved []string
+	for _, name := range capitalMandates {
+		if old != nil {
+			for i, n := range old.Mandate {
+				if n == name {
+					old.Mandate = append(old.Mandate[:i], old.Mandate[i+1:]...)
+					break
+				}
+			}
+			old.standUpIndustry()
+			old.Reprice()
+		}
+		if !hasMandate(best, name) {
+			best.Mandate = append(best.Mandate, name)
+			moved = append(moved, name)
+		}
+	}
+	best.standUpIndustry()
+	best.Reprice()
+	u.Journal.Logf(u.Day, -1, "%s moves its seat to %s and takes %v with it", c, best.Name, moved)
 }
+
+// capitalMandates are the lines a capital runs because it is the capital,
+// not because of what is in its ground. They move with the seat.
+var capitalMandates = []string{"Munitions", "Shipyard"}
 
 // --- Doctrine ------------------------------------------------------------
 

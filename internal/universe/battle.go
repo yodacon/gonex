@@ -303,6 +303,11 @@ func (u *Universe) conquer(w *World, flight []*traffic.Hull) {
 		h.Home, h.From, h.To, h.Status = w.Stellar, w.Stellar, w.Stellar, traffic.Idle
 		h.V, h.S = 0, 0
 	}
+	// If that was somebody's seat, their government moves today rather than
+	// spending a week without an arsenal.
+	for _, other := range govt.Colors() {
+		u.succeed(other)
+	}
 	if u.OnConquer != nil {
 		u.OnConquer(w)
 	}

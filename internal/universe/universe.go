@@ -47,6 +47,14 @@ type Universe struct {
 	// end of it.
 	OnConquer func(*World)
 
+	// overhead is each colour's span-of-control penalty, refreshed daily.
+	// See targets.go.
+	overhead [4]float64
+
+	// capital is each colour's seat, by stellar id, or -1. It is elected
+	// once at genesis and inherited thereafter; see Capital().
+	capital [4]int
+
 	// Revivals counts what the core world revive plan actually did, by the
 	// cause it was answering. It is a diagnostic, not state the simulation
 	// reads: a plan that fires a thousand times and changes nothing is the
@@ -144,6 +152,12 @@ func New(seed int64, ports []Port, hullsPer int) *Universe {
 	for i, id := range u.order {
 		u.Worlds[id].ord = i
 	}
+
+	u.foundCapitals()
+	// Before the first tick nothing has counted anybody's worlds yet, and an
+	// uninitialised overhead of zero would read as a government with no
+	// capability at all — a fleet cap of nought on day zero.
+	u.refreshOverhead()
 
 	// Minimal infrastructure, the capital's share: a Works, a Bastion and a
 	// Habitat at each colour's most populous world. Built, not bought — the
@@ -302,6 +316,7 @@ func (u *Universe) Audit() []econ.Discrepancy { return u.Books.Audit(u.Pools()..
 func (u *Universe) Tick() {
 	u.Day++
 	u.rollStrain()
+	u.refreshOverhead()
 	for _, id := range u.order {
 		w := u.Worlds[id]
 		u.mine(w)
@@ -517,7 +532,7 @@ func (u *Universe) produce(w *World) {
 	// every day. Two of three capitals rated zero the moment the yard was
 	// mandated alongside the munitions line.
 	for _, p := range w.Mandated() {
-		u.runPlant(w, p, 1)
+		u.runPlant(w, p, u.Overhead(w.Govt))
 	}
 	// Then everything else — SHARING whatever they compete for.
 	//
@@ -552,7 +567,7 @@ func (u *Universe) produce(w *World) {
 		share[m] = math.Min(1, w.Warehouse[m]/total[m])
 	}
 	for _, p := range rest {
-		rate := 1.0
+		rate := u.Overhead(w.Govt)
 		d := p.Demand()
 		for m := econ.Material(0); m < econ.Count; m++ {
 			if d[m] > 0 && share[m] < rate {

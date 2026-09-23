@@ -183,3 +183,72 @@ func (u *Universe) rally(c govt.Color) {
 		u.Journal.Logf(u.Day, -1, "%s recalls %d hulls to %s", c, sent, capital.Name)
 	}
 }
+
+// --- span of control -----------------------------------------------------
+
+// Overhead is the share of its nominal capability a government actually gets
+// at its current size: 1.0 up to the span of control, falling away beyond it.
+//
+// Until the war worked this term could not have mattered, because no colour
+// could grow. Now that conquest is possible its absence is live, and the
+// shape of the absence is that EVERY term in this game rewards size linearly
+// and none of them charges for it. FleetCap is eight hulls per world held,
+// so a colour with twice the territory may float twice the merchant marine
+// and therefore fly twice the flights and take twice the worlds. There is no
+// opposing term anywhere.
+//
+// Strategic Conquest's answer is the one adopted here: production time rises
+// as the empire grows — more cities, longer builds for everything. It is a
+// good answer because it is not a cap. A large empire is still larger; it is
+// simply worse per world than a compact one, so conquest has a natural
+// stopping point that is a decision rather than a wall.
+//
+// Three places charge it, and they are the three legs of the snowball:
+//
+//	the factory floor   every plant on the colour's worlds runs slower
+//	the fleet ceiling   FleetCap grows sublinearly instead of linearly
+//	the expansion clock a stretched government looks for a target less often
+//
+// It is deliberately calibrated to be INERT at genesis — the largest colour
+// holds 52 worlds against a span of 60 — so today's balance numbers are
+// unchanged and the term only speaks when somebody actually runs away. A
+// dormant term measured against nothing would be indistinguishable from no
+// term at all, so it is unit-tested directly instead.
+func (u *Universe) Overhead(c govt.Color) float64 {
+	if c == govt.None || c < 0 || int(c) >= len(u.overhead) {
+		return 1
+	}
+	if u.overhead[c] <= 0 {
+		return 1 // never counted; a government is not penalised for that
+	}
+	return u.overhead[c]
+}
+
+// refreshOverhead recomputes the span penalty once a day. Counting a
+// colour's worlds is a scan of the map, and produce() would otherwise do it
+// once per plant per world per tick.
+func (u *Universe) refreshOverhead() {
+	for i := range u.overhead {
+		u.overhead[i] = 1
+	}
+	for _, c := range govt.Colors() {
+		n := float64(len(u.worldsOf(c)))
+		if n <= spanOfControl {
+			continue
+		}
+		u.overhead[c] = math.Pow(spanOfControl/n, overheadExponent)
+	}
+}
+
+const (
+	// spanOfControl is how many worlds a government runs without friction.
+	// Sixty, against a genesis spread of 20/40/52, so the term is silent
+	// until a colour has taken a real bite out of somebody.
+	spanOfControl = 60.0
+	// overheadExponent is how hard the penalty bites past the span. A half
+	// power is gentle on purpose: at twice the span a government keeps 71%
+	// of its capability, at four times 50%. Conquest should get harder, not
+	// self-defeating — an empire that shrinks when it wins is a bug wearing
+	// a balance term's clothes.
+	overheadExponent = 0.5
+)

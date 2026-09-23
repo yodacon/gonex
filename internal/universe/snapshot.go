@@ -24,6 +24,7 @@ type Snapshot struct {
 	Charters  [][2]int
 	Exchequer [4]int
 	Priority  [4]int
+	Capital   [4]int
 	Policies  [4]Policy
 	Tune      Tuning
 	Counters  Counters
@@ -78,7 +79,7 @@ type Counters struct {
 // Snapshot captures the universe.
 func (u *Universe) Snapshot() *Snapshot {
 	s := &Snapshot{Seed: u.Seed, Day: u.Day, Exchequer: u.Exchequer, Priority: u.Priority,
-		Policies: u.Policies, Tune: u.Tune}
+		Capital: u.capital, Policies: u.Policies, Tune: u.Tune}
 	for _, id := range u.order {
 		w := u.Worlds[id]
 		s.Worlds = append(s.Worlds, WorldState{
@@ -122,6 +123,15 @@ func (u *Universe) Restore(s *Snapshot) {
 	u.Exchequer = s.Exchequer
 	u.Priority = s.Priority
 	u.Policies = s.Policies
+	// A seat is a founding fact and must survive a reload. A save written
+	// before seats were recorded restores as all-zero, which is not a valid
+	// stellar; re-found in that case so an old save does not come back with
+	// three governments that have no capital.
+	if s.Capital != ([4]int{}) {
+		u.capital = s.Capital
+	} else {
+		u.foundCapitals()
+	}
 	if s.Tune.StartPurse > 0 {
 		u.Tune = s.Tune
 	}
