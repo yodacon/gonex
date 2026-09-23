@@ -419,11 +419,48 @@ func (u *Universe) mine(w *World) {
 		return wants[i].m < wants[j].m
 	})
 
+	// A CONTESTED SEAM IS RATIONED, exactly as a contested warehouse is on
+	// the factory floor. Serving the biggest want first and letting it take
+	// the lot is the same fault produce() was fixed for, one stage upstream:
+	// a world wanting 245 t/d of ferrite and 245 t/d of silicate against a
+	// 273 t/d budget dug ferrite in full and silicate at a ninth, for ever,
+	// because ferrite sorts first. Galaxy-wide that is what held silicate
+	// at 9% of what the fabricators wanted while cuprite ran at 50%: the
+	// electronics chain was not short of rock, it was short of its TURN.
+	//
+	// Two passes. The first gives every seam its proportional share, so
+	// nobody is served last; the second spends whatever the thin seams and
+	// the satisfied wants left behind, largest first, so a rationed budget
+	// is never an idle one.
+	var asked float64
+	for _, x := range wants {
+		asked += x.tons
+	}
+	var served econ.Stock
+	if asked > budget {
+		share := budget / asked
+		for _, x := range wants {
+			if budget <= 0 {
+				break
+			}
+			take := math.Min(x.tons*share, budget)
+			got := econ.Transfer(&w.Reserve, &w.Warehouse, x.m, take)
+			budget -= got
+			served[x.m] += got
+			if got > 0 {
+				u.Journal.Mined.Add(x.m, got)
+			}
+		}
+	}
+
 	for _, x := range wants {
 		if budget <= 0 {
 			break
 		}
-		take := math.Min(x.tons, budget)
+		take := math.Min(x.tons-served[x.m], budget)
+		if take <= 0 {
+			continue
+		}
 		got := econ.Transfer(&w.Reserve, &w.Warehouse, x.m, take)
 		budget -= got
 		if got > 0 {

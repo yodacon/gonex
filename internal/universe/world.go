@@ -225,13 +225,14 @@ func Seed(seed int64, p Port) *World {
 	return w
 }
 
-// stake capitalises a licensed refinery.
+// stake capitalises a factory that has to buy its feedstock.
 //
-// A hot world is founded with working capital sized to its OWN LINE: enough
-// to buy the acid, the hydraulic fluid and the food it can never make, for
-// long enough to get the first fuel out of the door and paid for.
+// Such a world is founded with working capital sized to its OWN LINE: enough
+// to buy the acid, the hydraulic fluid, the copper and the food it can never
+// make, for long enough to get the first product out of the door and paid
+// for.
 //
-// Without it the hot worlds land in a trap that is easy to miss and
+// Without it such a world lands in a trap that is easy to miss and
 // impossible to escape from the inside. No chemicals, so no fuel; no fuel,
 // so no revenue; no revenue, so no chemicals. A port buys only what its
 // treasury covers, so a broke world does not send a distress signal — it
@@ -239,13 +240,24 @@ func Seed(seed int64, p Port) *World {
 // day melt line at nine per cent of capacity for a simulated year and
 // nothing anywhere said why.
 //
+// It was written for the hot worlds and gated on Hostile(), because when it
+// was written they were the only factories in the galaxy with nothing of
+// their own to sell. The triad then minted a hundred and nine ORBITALS,
+// every one of them a finishing line whose whole input list arrives by ship,
+// and every one of them founded on a fraction of its host's population —
+// which is to say on nothing. Earth Station turned away 168 kt of copper in
+// two years holding a treasury of three hundred credits, and the galaxy's
+// chip plants ran at three per cent of nameplate for want of money rather
+// than for want of rock. The gate, not the rule, was the fault.
+//
+// A world that digs what it processes computes a stake of nearly nothing and
+// keeps its ordinary pop/4 purse, so this is self-limiting: it capitalises
+// exactly the ports that cannot capitalise themselves.
+//
 // This is the only place in the game that mints money outside the ordinary
 // pop/4 rule, and it mints it at genesis, where minting is what genesis is
 // for. After this the ledger is closed and every credit is conserved.
 func (w *World) stake() {
-	if !w.Hostile() {
-		return
-	}
 	var daily float64
 	for _, p := range w.Plant {
 		d := p.Demand()
