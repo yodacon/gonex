@@ -119,6 +119,10 @@ func (u *Universe) govern() {
 		// 3b-ii. The core world revive plan: the capital retools against
 		// whatever the galaxy could not draw this month. See bottleneck.go.
 		u.revive(c)
+		// 3b-iii. Call enough hulls home to make up a flight. See
+		// targets.go: without this the census of hulls idle at a capital is
+		// zero for ever and no government can mount an attack.
+		u.rally(c)
 		// 3c. Restock: a capital going dry gets a rounds convoy from any
 		// held world that has them. Konquest's planet with a zero kill
 		// percentage is the one thing no government should let happen to
@@ -188,29 +192,49 @@ func (u *Universe) expand(c govt.Color) {
 	if len(idle) < n+1 {
 		return
 	}
-	var target *World
-	var targetR float64
-	for _, id := range u.order {
-		w := u.Worlds[id]
-		if w.Govt != govt.None || w.Pop <= 0 {
-			continue
-		}
-		r := u.Rating(w)
-		if target == nil || r < targetR || (r == targetR && w.Pop > target.Pop) {
-			target, targetR = w, r
-		}
-	}
-	if target == nil || targetR >= u.Rating(cap) {
+	// Konquest's three terms, not one. See targets.go: scoring on kill
+	// percent alone made every colour pick the same fat neutral wherever it
+	// was on the map, because a hundred and six populated neutrals rated
+	// inside a narrow band and the population tie-break then decided
+	// everything. Distance is the term the source game calls decisive.
+	ranked := u.Targets(c)
+	if len(ranked) == 0 {
 		return
 	}
+	// Arm the flight first, THEN ask whether it can win. The old gate
+	// compared the target's rating to the CAPITAL's, which is a category
+	// error: a capital's rating is how well it defends itself, and has
+	// nothing to do with what the flight leaving it can do. It meant a
+	// government whose own magazine was dry could never attack anything,
+	// however weak — and with rounds at 68 t/d galaxy-wide, that was all
+	// three of them, for ever. Red's capital sat at a rating of zero, which
+	// is the one thing Konquest says no government should allow.
+	flight := make([]*traffic.Hull, 0, n)
 	for i := 0; i < n && i < len(idle)-1; i++ {
 		h := idle[i]
 		u.arm(cap, h)
+		flight = append(flight, h)
+	}
+	if len(flight) == 0 {
+		return
+	}
+	var target *World
+	var pick Target
+	for _, t := range ranked {
+		if u.flightRating(flight, float64(t.World.Built[Picket])) > t.Rating {
+			target, pick = t.World, t
+			break
+		}
+	}
+	if target == nil {
+		return // nothing on the board this flight can carry; the rounds stay aboard
+	}
+	for _, h := range flight {
 		h.Mission = traffic.Flight
 		u.Fleet.Depart(h, cap.Stellar, target.Stellar, traffic.Hauling, u.Day)
 	}
-	u.Journal.Logf(u.Day, -1, "%s sends %d hulls from %s to take %s (rated %.2f)",
-		c, n, cap.Name, target.Name, targetR)
+	u.Journal.Logf(u.Day, -1, "%s sends %d hulls from %s to take %s — rated %.2f, %d jumps, %.0f t/d of industry (score %.2f)",
+		c, len(flight), cap.Name, target.Name, pick.Rating, pick.Jumps, pick.Produce, pick.Score)
 }
 
 // Standings is a colour-by-colour summary for the desk and the console.

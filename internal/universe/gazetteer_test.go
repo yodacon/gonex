@@ -189,6 +189,23 @@ func TestGazetteer(t *testing.T) {
 		t.Logf("  revive plan answered %-22s %4d times", c.String()+":", u.Revivals[c])
 	}
 
+	t.Logf("=== THE PRODUCTION MATH ===")
+	t.Logf("  what each capital would take next, scored on kill %%, distance and production")
+	for _, c := range govt.Colors() {
+		capital := u.Capital(c)
+		if capital == nil {
+			continue
+		}
+		ranked := u.Targets(c)
+		if len(ranked) == 0 {
+			continue
+		}
+		best := ranked[0]
+		t.Logf("  %-5s from %-20s (rated %.2f, %d idle) → %-20s rated %.2f · %d jumps · %6.1f t/d · score %.2f",
+			c, capital.Name, u.Rating(capital), len(u.idleAt(capital, c)),
+			best.World.Name, best.Rating, best.Jumps, best.Produce, best.Score)
+	}
+
 	t.Logf("=== THE BOOKS ===")
 	t.Logf("  genesis %.0f kt · crust %.0f kt · warehouse %.0f kt · afloat %.0f t · sink %.0f kt",
 		u.Books.Genesis.Total()/1000, reserve.Total()/1000, warehouse.Total()/1000,
