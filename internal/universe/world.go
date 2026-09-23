@@ -130,6 +130,10 @@ type World struct {
 	// ore is not sited, it is merely hopeful.
 	mandated int
 
+	// civicPop is the population the civic modules were last sized against.
+	// See standUpCivic: the return path follows population, which moves.
+	civicPop int
+
 	// revived is how many of this world's mandates were added by the core
 	// world revive plan rather than founded with it. See bottleneck.go: the
 	// founding mandates are never retired, the revived ones rotate.
@@ -456,8 +460,36 @@ func (w *World) standUpIndustry() {
 		}
 		w.Plant = append(w.Plant, ch.Assemble(rate, w.Govt))
 	}
-	// The return path, sized to the world: a composter that can keep up
-	// with what its people eat, and a breaker that can work a wreck a week.
+	if !fieldOnly {
+		w.standUpCivic()
+	}
+}
+
+// standUpCivic sizes the return path to the world AS IT IS TODAY: a
+// composter that can keep up with what its people eat, gardens that cover
+// the subsistence share of the ration, and a breaker that can work what the
+// city wears out.
+//
+// It is separate from standUpIndustry because it has to be re-run on a
+// different clock. Industry is re-stood when something DECIDES — a Works
+// bought, a mandate changed, a world taken — and that is correct, because
+// what a world makes follows from its rock and its orders. The civic path
+// follows from its POPULATION, which is the one quantity in this game that
+// grows continuously and without bound: a homeworld doubles in about eight
+// weeks.
+//
+// Sizing it once at genesis and never again is what broke the compost loop.
+// Every inhabited world had a composter, none of them was missing, and the
+// galaxy still accumulated 1.17 MEGATONNES of compost on worlds that owned
+// one — because Capella's composter was built for the eighteen million
+// people it had on day zero and was still that size when there were far
+// more. The plant was not absent. It was the right size for a city that no
+// longer existed.
+func (w *World) standUpCivic() {
+	if w.Kind == BodyField {
+		w.Civic = nil
+		return
+	}
 	civicM := math.Max(float64(w.Pop), 1) / 1e6
 	garden := 0.0
 	if w.Reserve[econ.Biomass] > 0 || w.Warehouse[econ.Biomass] > 0 {
@@ -465,8 +497,41 @@ func (w *World) standUpIndustry() {
 		// subsistence share of the ration: appetite / (0.75 · 0.90 · yield).
 		garden = w.appetite(econ.Rations) * gardenShare / (0.75 * 0.90)
 	}
-	if !fieldOnly {
-		w.Civic = industry.Civic(garden, w.organicAppetite()*1.1, civicM*breakerRate, w.Govt)
+	// The breaker works what the city throws away, plus a margin for the
+	// occasional wreck landing. Sizing it on population alone gave every
+	// port a yard four times bigger than anything that could ever reach it.
+	scrap := w.durableAppetite()*junkShare*breakerMargin + civicM*wreckAllowance
+	w.Civic = industry.Civic(garden, w.organicAppetite()*compostMargin, scrap, w.Govt)
+	w.civicPop = w.Pop
+}
+
+// durableAppetite is the tonnage of structure and electronics a day's living
+// wears out, which is what the breaker's yard is sized against.
+func (w *World) durableAppetite() float64 {
+	var t float64
+	for m := econ.Material(0); m < econ.Count; m++ {
+		if m.Durable() {
+			t += w.appetite(m)
+		}
+	}
+	return t
+}
+
+// resizeCivic re-stands the return path when the population it serves has
+// moved far enough to matter. It is checked in grow(), which is the only
+// place population changes, and the threshold keeps it from re-allocating
+// three modules per world per day for a fraction of a percent of drift.
+func (w *World) resizeCivic() {
+	if w.Kind == BodyField || len(w.Civic) == 0 {
+		return
+	}
+	was := float64(w.civicPop)
+	if was <= 0 {
+		w.standUpCivic()
+		return
+	}
+	if d := math.Abs(float64(w.Pop)-was) / was; d >= civicDrift {
+		w.standUpCivic()
 	}
 }
 
@@ -617,6 +682,24 @@ func (w *World) Wants(m econ.Material) float64 {
 	return t
 }
 
+// consumes reports whether anything on this world draws this material,
+// INCLUDING the civic modules. It is the question Wants() deliberately does
+// not answer: Wants() is import demand, and a composter's appetite for
+// compost is not import demand — nobody ships compost. For deciding whether
+// a heap is misplaced, though, a world that can eat it plainly has a use
+// for it.
+func (w *World) consumes(m econ.Material) bool {
+	if w.Wants(m) > 0 {
+		return true
+	}
+	for _, p := range w.Civic {
+		if p.Demand()[m] > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // wantsAll is the whole demand vector in one pass over the plants, which is
 // what Wants(m) would cost thirty times over.
 func (w *World) wantsAll() econ.Stock {
@@ -647,7 +730,23 @@ func (w *World) Speciality() string {
 const (
 	maxChains          = 2
 	chainRate          = 55.0 // tons/day of throughput per million citizens
-	breakerRate        = 6.0  // tons/day of scrap a port can break per million citizens
+	breakerMargin      = 1.25 // headroom on the breaker over what the city sheds
+	wreckAllowance     = 1.5  // tons/day per million citizens, for hulls that come down
+
+	// The composter's headroom and the threshold that re-sizes it are one
+	// decision, not two, and getting the relationship wrong is what leaves a
+	// mountain of compost on a world that owns a working composter.
+	//
+	// Between two re-sizings the population grows by up to civicDrift, and
+	// organic appetite grows FASTER than that, because medicine is on the
+	// luxury exponent and is superlinear in heads. So the headroom has to
+	// cover the appetite growth a full drift produces, or the inflow
+	// outruns the plant for the whole window and the surplus never comes
+	// back. A tenth of drift against a 1.30 margin leaves the composter
+	// ahead of its city at every point in the cycle — and ahead by enough
+	// to also work off a backlog, slowly.
+	compostMargin = 1.30
+	civicDrift    = 0.10
 	gardenShare        = 0.65 // the share of its own ration a world with soil grows itself
 	popCeiling         = 3.2e7
 	hostileCeiling     = 1.5e6    // a sealed industrial world at the milling threshold

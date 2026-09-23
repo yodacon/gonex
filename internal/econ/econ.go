@@ -180,6 +180,23 @@ func (m Material) Organic() bool {
 	return false
 }
 
+// Durable reports whether a city wearing this out leaves JUNK rather than
+// nothing. It is the inorganic half of the rule Organic() is the organic
+// half of: eat a ration and what is left is compost, use up a girder and
+// what is left is scrap.
+//
+// Structure and electronics only. Fuel is burnt and leaves nothing to
+// recover; a round is fired; medicine and lumber are organic and compost.
+// Keeping the list this short is what stops the return path from making
+// steel renewable — see the note on Scrap.
+func (m Material) Durable() bool {
+	switch m {
+	case Steel, Ore, Chips:
+		return true
+	}
+	return false
+}
+
 // Fuel reports whether this is a hyperdrive charge — the two forms heavy
 // lithium is delivered in. They are the same energy in different packaging,
 // and a reactor takes one or the other, never both.

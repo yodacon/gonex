@@ -177,7 +177,15 @@ func (u *Universe) Bottlenecks() []Constraint {
 			// Idle means nobody HERE has a use for it. A refinery sitting on
 			// its own output is idle tonnage; a fab holding copper it will
 			// draw tomorrow is not.
-			if w.Wants(m) <= 0 && w.appetite(m) <= 0 {
+			//
+			// consumes() rather than Wants(), and the difference is the
+			// whole return path. Wants() deliberately leaves the civic
+			// modules out for anything but crust — a composter's want for
+			// compost is not import demand and must not price as such — so
+			// asking it whether a world has a use for compost always said
+			// no, and every heap on every world that owned a working
+			// composter was counted as misplaced.
+			if !w.consumes(m) && w.appetite(m) <= 0 {
 				idle[m] += w.Warehouse[m]
 			}
 		}
@@ -216,7 +224,12 @@ func (u *Universe) Bottlenecks() []Constraint {
 // order of blame: a thing nobody makes cannot be a lane problem, and a thing
 // that never left the pithead cannot be a money problem.
 func (u *Universe) attribute(m econ.Material, c Constraint, s Strain) Cause {
-	if !m.Crust() && c.Nameplate <= 0 {
+	// A return material has no plant and never will: compost is made by
+	// eating and scrap by wearing things out or losing them in battle. The
+	// detector used to read that absence as "nobody makes it", which is the
+	// one thing it was not — both were being made, and the fault was that
+	// the plants CONSUMING them were the wrong size.
+	if !m.Crust() && !m.Return() && c.Nameplate <= 0 {
 		return NoPlant
 	}
 	if m.Crust() {

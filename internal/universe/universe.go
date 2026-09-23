@@ -668,10 +668,37 @@ func (u *Universe) eat(w *World, m econ.Material, tons float64) float64 {
 	if m.Organic() {
 		got := w.Warehouse.Take(m, tons)
 		w.Warehouse.Add(econ.Compost, got)
+		u.Journal.Made.Add(econ.Compost, got)
+		return got
+	}
+	if m.Durable() {
+		// A city wears out girders, aggregate and electronics, and what it
+		// leaves behind is junk on the surface rather than nothing at all.
+		//
+		// Until this, the ONLY source of scrap in the game was a hull
+		// destroyed in battle — and the war did not work, so the galaxy
+		// made zero tons of scrap in two simulated years while two hundred
+		// and eighteen breaker's yards sat on 2,966 t/d of capacity. Half
+		// of the economy's return path had never once run.
+		//
+		// junkShare is well under one, deliberately. The design rule is
+		// that food is renewable and steel is not, and it survives: a ton
+		// of steel a city uses comes back as 0.40 t of scrap and a breaker
+		// turns that into 0.75 of a ton of steel, so the round trip is 30%.
+		// A city recovers some of what it wears out. It cannot live on it.
+		got := w.Warehouse.Take(m, tons)
+		junk := got * junkShare
+		w.Warehouse.Add(econ.Scrap, junk)
+		u.Journal.Made.Add(econ.Scrap, junk)
+		u.Sink.Add(m, got-junk)
 		return got
 	}
 	return econ.Consume(&w.Warehouse, &u.Sink, m, tons)
 }
+
+// junkShare is how much of a worn-out durable a city can put on the pad for
+// the breaker. The rest is rust, dust and landfill, and goes to the sink.
+const junkShare = 0.40
 
 // grow compounds population — the demand side of the whole economy, and the
 // axis Green leads.
@@ -710,6 +737,9 @@ func (u *Universe) grow(w *World) {
 		next = minPop
 	}
 	w.Pop = int(next)
+	// The return path is sized to the population it serves, and the
+	// population just moved. See World.standUpCivic.
+	w.resizeCivic()
 }
 
 const (

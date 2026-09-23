@@ -191,6 +191,13 @@ func (u *Universe) Build(w *World, b Building, purse *int, seat Seat) error {
 	switch b {
 	case Works:
 		w.standUpIndustry()
+	case Habitat:
+		// A Habitat raises the luxury exponent, which raises what the city
+		// eats — medicine especially — without moving the population one
+		// head. resizeCivic watches population and would never notice, so
+		// the composter would be undersized from the day the habitat opened
+		// and the surplus would pile up for ever.
+		w.standUpCivic()
 	}
 	if first && seat == SeatPlayer {
 		w.Seat = SeatPlayer
