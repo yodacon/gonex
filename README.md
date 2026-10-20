@@ -55,6 +55,7 @@ The reentry-trader layer — missions at the bar and mission computer,
 landings flown as MHD-shielded entries, the shipyard/outfitter/crew
 economy, berth saves and the DED screen — is documented in
 [docs/PILOT-GUIDE.md](docs/PILOT-GUIDE.md).
+A tour of the game in pictures is in [docs/FEATURE_GUIDE.md](docs/FEATURE_GUIDE.md).
 
 ## Project layout
 
